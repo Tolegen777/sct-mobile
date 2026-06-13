@@ -1,12 +1,13 @@
 /**
  * Деталь записи на сервис — функциональный порт pages/BookingDetailPage.tsx.
  * Источник — useBookingQuery. Отмена — useCancelBookingMutation + нативный
- * Alert (вместо Toast/Modal веба). Редактирование (EditBookingModal) отложено
- * до раунда booking-wizard.
+ * Alert. Редактирование — EditBookingModal (филиал/дата-время/комментарий).
  */
+import { useState } from 'react'
 import { Alert, ScrollView, Text, View } from 'react-native'
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router'
 import { useBookingQuery, useCancelBookingMutation } from '@/features/bookings/queries'
+import { EditBookingModal } from '@/features/bookings/EditBookingModal'
 import { RequireAuth } from '@/shared/ui/RequireAuth'
 import { Spinner } from '@/shared/ui/Spinner'
 import { Card } from '@/shared/ui/Card'
@@ -36,6 +37,7 @@ function BookingInner({ id }: { id?: number }) {
   const router = useRouter()
   const { data, isLoading, isError, refetch } = useBookingQuery(id)
   const cancel = useCancelBookingMutation(id ?? 0)
+  const [editOpen, setEditOpen] = useState(false)
 
   if (isLoading) {
     return (
@@ -68,6 +70,7 @@ function BookingInner({ id }: { id?: number }) {
   const plate = data.car?.license_plate || data.license_plate_snapshot
   const price = data.price?.display
   const canCancel = data.permissions?.can_cancel && data.status !== 'CANCELLED'
+  const canEdit = data.permissions?.can_edit && data.status !== 'CANCELLED'
 
   const onCancel = () => {
     Alert.alert('Отменить запись?', 'Это действие нельзя отменить.', [
@@ -131,12 +134,23 @@ function BookingInner({ id }: { id?: number }) {
         ) : null}
       </ScrollView>
 
-      {canCancel ? (
-        <View className="border-t border-borderLight bg-white px-4 py-3">
-          <Button variant="danger" fullWidth loading={cancel.isPending} onPress={onCancel}>
-            Отменить запись
-          </Button>
+      {canEdit || canCancel ? (
+        <View className="gap-2 border-t border-borderLight bg-white px-4 py-3">
+          {canEdit ? (
+            <Button variant="primary" fullWidth onPress={() => setEditOpen(true)}>
+              Изменить запись
+            </Button>
+          ) : null}
+          {canCancel ? (
+            <Button variant="danger" fullWidth loading={cancel.isPending} onPress={onCancel}>
+              Отменить запись
+            </Button>
+          ) : null}
         </View>
+      ) : null}
+
+      {canEdit ? (
+        <EditBookingModal open={editOpen} onClose={() => setEditOpen(false)} booking={data} />
       ) : null}
     </View>
   )

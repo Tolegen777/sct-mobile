@@ -1,12 +1,13 @@
 /**
  * Визард «Добавить авто» — функциональный порт features/garage/add-car/*.
- * Шаги: Марка → Модель → Характеристики (модификация) → Номер.
- * Использует реальный конфигуратор cars/marks→models→modifications и создаёт
- * авто через useCreateCarMutation (modification_source_id + данные формы).
+ * Шаги: Марка → Модель → Параметры (год/кузов/поколение) → Модификация → Номер.
+ * Использует реальный конфигуратор cars/marks→models→filters→modifications и
+ * создаёт авто через useCreateCarMutation (modification_source_id + форма).
  *
- * Упрощение относительно веба: отдельный шаг «Поколение/фильтры» (SpecsStep +
- * ConfigSidebar) свёрнут — модификации показываем списком по марке+модели.
- * Полную фильтрацию (год/кузов/двигатель/КПП) можно добавить позже.
+ * Шаг «Параметры» (порт web SpecsStep) сужает список модификаций по
+ * году/кузову/поколению через `/cars/filters/`. Это убирает плоский дамп всех
+ * модификаций марки+модели (для популярных авто — десятки) и снижает риск 502
+ * на тяжёлых выборках. Поколение/«Показать модификации» ведёт к шагу выбора.
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
@@ -25,13 +26,21 @@ import { formatEngineVolume } from '@/shared/lib/format'
 import { useCreateCarMutation } from '@/features/garage/queries'
 import { parseApiError } from '@/features/auth/errors'
 import {
+  useFiltersQuery,
   useMarksQuery,
   useModelsQuery,
   useModificationsQuery,
 } from '@/features/garage/add-car/queries'
 import type { Mark, Model, Modification } from '@/features/garage/add-car/types'
 
-const STEPS = ['Марка', 'Модель', 'Характеристики', 'Номер']
+/** Параметры сужения модификаций (год/кузов/поколение) — как web SpecsValues. */
+interface SpecsValues {
+  year?: number
+  body_type?: number
+  generation?: number
+}
+
+const STEPS = ['Марка', 'Модель', 'Параметры', 'Модификация', 'Номер']
 
 export default function AddCarScreen() {
   return (
@@ -47,25 +56,35 @@ function AddCarWizard() {
   const [step, setStep] = useState(0)
   const [mark, setMark] = useState<Mark | null>(null)
   const [model, setModel] = useState<Model | null>(null)
+  const [specs, setSpecs] = useState<SpecsValues>({})
   const [modification, setModification] = useState<Modification | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
   const onPickMark = (m: Mark) => {
     if (mark?.id !== m.id) {
       setModel(null)
+      setSpecs({})
       setModification(null)
     }
     setMark(m)
     setStep(1)
   }
   const onPickModel = (m: Model) => {
-    if (model?.id !== m.id) setModification(null)
+    if (model?.id !== m.id) {
+      setSpecs({})
+      setModification(null)
+    }
     setModel(m)
     setStep(2)
   }
+  const onChangeSpecs = (next: SpecsValues) => {
+    // Любая смена параметров меняет набор модификаций — сбрасываем выбор.
+    setSpecs(next)
+    setModification(null)
+  }
   const onPickMod = (mod: Modification) => {
     setModification(mod)
-    setStep(3)
+    setStep(4)
   }
 
   const submit = async (v: FinalValues) => {
@@ -97,29 +116,51 @@ function AddCarWizard() {
           headerBackVisible: true,
         }}
       />
-      <StepHeader step={step} mark={mark} model={model} />
+      <StepHeader step={step} mark={mark} model={model} specs={specs} />
 
       {step === 0 ? <MarkPicker selectedId={mark?.id ?? null} onSelect={onPickMark} /> : null}
       {step === 1 && mark ? (
         <ModelPicker markId={mark.id} selectedId={model?.id ?? null} onSelect={onPickModel} />
       ) : null}
       {step === 2 && mark && model ? (
+        <SpecsPicker
+          markId={mark.id}
+          modelId={model.id}
+          values={specs}
+          onChange={onChangeSpecs}
+          onContinue={() => setStep(3)}
+        />
+      ) : null}
+      {step === 3 && mark && model ? (
         <ModificationPicker
           markId={mark.id}
           modelId={model.id}
+          specs={specs}
           selectedId={modification?.source_id ?? null}
           onSelect={onPickMod}
         />
       ) : null}
-      {step === 3 && modification ? (
+      {step === 4 && modification ? (
         <FinalForm onSubmit={submit} serverError={serverError} />
       ) : null}
     </View>
   )
 }
 
-function StepHeader({ step, mark, model }: { step: number; mark: Mark | null; model: Model | null }) {
-  const summary = [mark?.name, model?.name].filter(Boolean).join(' · ')
+function StepHeader({
+  step,
+  mark,
+  model,
+  specs,
+}: {
+  step: number
+  mark: Mark | null
+  model: Model | null
+  specs: SpecsValues
+}) {
+  const summary = [mark?.name, model?.name, specs.year ? String(specs.year) : null]
+    .filter(Boolean)
+    .join(' · ')
   return (
     <View className="border-b border-borderLight bg-white px-4 py-3">
       <View className="flex-row gap-2">
@@ -241,19 +282,190 @@ function ModelPicker({ markId, selectedId, onSelect }: { markId: number; selecte
   )
 }
 
-// --- Шаг 3: Модификация ---
+// --- Шаг 3: Параметры (год / кузов / поколение) — порт web SpecsStep ---
+const YEAR_LIMIT = 12
+
+function SpecsPicker({
+  markId,
+  modelId,
+  values,
+  onChange,
+  onContinue,
+}: {
+  markId: number
+  modelId: number
+  values: SpecsValues
+  onChange: (next: SpecsValues) => void
+  onContinue: () => void
+}) {
+  const query = useMemo(
+    () => ({ mark: markId, model: modelId, ...values }),
+    [markId, modelId, values],
+  )
+  const { data, isFetching, isError } = useFiltersQuery(query)
+  const [showAllYears, setShowAllYears] = useState(false)
+
+  const years = data?.years ?? []
+  const bodyTypes = data?.body_types ?? []
+  const generations = data?.generations ?? []
+  const count = data?.modifications_count ?? 0
+
+  const sortedYears = useMemo(() => [...years].sort((a, b) => b - a), [years])
+  const visibleYears = showAllYears ? sortedYears : sortedYears.slice(0, YEAR_LIMIT)
+
+  const selectYear = (y: number) =>
+    onChange({ year: values.year === y ? undefined : y, body_type: undefined, generation: undefined })
+  const selectBody = (id: number) =>
+    onChange({ ...values, body_type: values.body_type === id ? undefined : id, generation: undefined })
+  const selectGeneration = (id: number) => {
+    onChange({ ...values, generation: id })
+    onContinue()
+  }
+
+  if (isFetching && !data) return <Centered><Spinner /></Centered>
+
+  return (
+    <View className="flex-1">
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 24, paddingBottom: 24 }}>
+        {isError ? (
+          <View className="rounded-sct border border-amber-200 bg-amber-50 p-3">
+            <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-sm text-amber-800">
+              Сервер не смог посчитать параметры под эту модель.
+            </Text>
+            <Text className="mt-1 text-xs text-amber-800/80">
+              Можно пропустить и сразу перейти к выбору модификации.
+            </Text>
+          </View>
+        ) : null}
+
+        {/* Год выпуска */}
+        <View className="gap-3">
+          <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+            Год выпуска
+          </Text>
+          {years.length === 0 ? (
+            <Text className="text-sm text-textSecondary/70">
+              Нет доступных годов — переходите к модификациям.
+            </Text>
+          ) : (
+            <>
+              <View className="flex-row flex-wrap gap-2">
+                {visibleYears.map((y) => (
+                  <Pressable
+                    key={y}
+                    onPress={() => selectYear(y)}
+                    className={cn(
+                      'min-w-[22%] items-center rounded-sct border px-3 py-3',
+                      values.year === y ? 'border-brandBlue bg-brandBlue' : 'border-borderLight bg-white',
+                    )}
+                  >
+                    <Text
+                      style={{ fontFamily: 'Inter_900Black' }}
+                      className={cn('text-base', values.year === y ? 'text-white' : 'text-textPrimary')}
+                    >
+                      {y}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {!showAllYears && sortedYears.length > YEAR_LIMIT ? (
+                <Pressable
+                  onPress={() => setShowAllYears(true)}
+                  className="items-center rounded-sct border-2 border-dashed border-borderLight py-3"
+                >
+                  <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+                    Показать все года ({sortedYears.length})
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        {/* Тип кузова — после выбора года */}
+        {values.year !== undefined && bodyTypes.length > 0 ? (
+          <View className="gap-3 border-t border-borderLight pt-5">
+            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+              Тип кузова
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {bodyTypes.map((b) => (
+                <Pressable
+                  key={b.id}
+                  onPress={() => selectBody(b.id)}
+                  className={cn(
+                    'rounded-sct border px-4 py-3',
+                    values.body_type === b.id ? 'border-brandBlue bg-brandBlue' : 'border-borderLight bg-white',
+                  )}
+                >
+                  <Text
+                    style={{ fontFamily: 'Inter_900Black' }}
+                    className={cn('text-[12px] uppercase', values.body_type === b.id ? 'text-white' : 'text-textPrimary')}
+                  >
+                    {b.name || b.code}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
+        {/* Поколение — после выбора года */}
+        {values.year !== undefined && generations.length > 0 ? (
+          <View className="gap-3 border-t border-borderLight pt-5">
+            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+              Поколение
+            </Text>
+            {generations.map((g) => (
+              <Pressable
+                key={g.id}
+                onPress={() => selectGeneration(g.id)}
+                className={cn(
+                  'rounded-sct border bg-white p-4',
+                  values.generation === g.id ? 'border-brandBlue' : 'border-borderLight',
+                )}
+              >
+                <Text style={{ fontFamily: 'Inter_900Black' }} className="text-sm uppercase text-textPrimary">
+                  {g.display_name}
+                </Text>
+                <Text className="mt-0.5 text-[11px] uppercase tracking-widest text-textSecondary">
+                  {g.year_from}{g.year_to ? `–${g.year_to}` : ''}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
+
+      {/* Нижняя панель: перейти к модификациям с текущими фильтрами (аналог
+          web-fallback «Далее»). Можно пропустить параметры целиком. */}
+      <View className="border-t border-borderLight bg-white px-4 py-3">
+        <Button fullWidth onPress={onContinue}>
+          {count > 0 ? `Показать модификации (${count})` : 'К выбору модификации'}
+        </Button>
+      </View>
+    </View>
+  )
+}
+
+// --- Шаг 4: Модификация ---
 function ModificationPicker({
   markId,
   modelId,
+  specs,
   selectedId,
   onSelect,
 }: {
   markId: number
   modelId: number
+  specs: SpecsValues
   selectedId: string | null
   onSelect: (m: Modification) => void
 }) {
-  const query = useMemo(() => ({ mark: markId, model: modelId, page_size: 100 }), [markId, modelId])
+  const query = useMemo(
+    () => ({ mark: markId, model: modelId, ...specs, page_size: 100 }),
+    [markId, modelId, specs],
+  )
   const { data, isLoading, isError } = useModificationsQuery(query)
   const mods = data?.results ?? []
 

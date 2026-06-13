@@ -4,12 +4,14 @@
 [`sct-web`](../sct-web) (без админки). Бэкенд тот же
 (`https://sct-back-demo.topcoder.kz`).
 
-Это **каркас-фундамент**: настроены проект, навигация и перенесено
-переиспользуемое ядро из веба. Экраны пока заглушки (кроме входа) — их
-наполняем по [`../sct-web/MOBILE_PORTING_GUIDE.md`](../sct-web/MOBILE_PORTING_GUIDE.md).
+Основной клиентский флоу **перенесён и работает**: вход/регистрация, главная,
+услуги, деталь пакета, запись на сервис (3 шага), сервисная книжка, гараж
+(список + добавление + редактирование), деталь записи с редактированием и
+отменой, контакты, профиль. Плюс нативное: app-lock (PIN/биометрия),
+deep links, offline/refetch. Что осталось и чем отличается от веба — в
+[`PORTING_STATUS.md`](./PORTING_STATUS.md) (там же таблица паритета).
 
-> ⚠️ Каркас собран статически и **ещё не запускался** в этом виде. На первом
-> `expo start` могут потребоваться мелкие правки версий/конфига — см. «Версии».
+> Ждёт бэк: восстановление пароля (экран-заглушка), push-уведомления.
 
 ---
 
@@ -78,15 +80,14 @@ src/
 - Навигация — `react-router` → Expo Router; `MobileTabBar` → нативные `Tabs`.
 - `shared/ui/*` — переписаны на RN-примитивы (зеркаля пропсы веба).
 
-### Известные TODO каркаса
-- **Шрифты:** Inter грузится, но веб-классы `font-bold/font-900` пока не
-  замаплены на семейства (`Inter_700Bold`/`Inter_900Black`). Сейчас жирность —
-  через `style={{ fontFamily: ... }}`. Домапить в `tailwind.config.js`.
-- **UI-кит:** перенесён основной набор (`Button/Input/PhoneInput/Card/Modal/
-  Select/Textarea/Toggle/Skeleton/SafeImage/Spinner`). Осталось `SearchableSelect`
-  и `Toast` — см. PORTING_STATUS.
-- **Иконки/сплеш, push, deep links, EAS-сборка** — раздел «Нативные добавки» гайда.
+### Известные TODO
+- **Шрифты:** Inter грузится, но веб-классы `font-bold/font-900` не замаплены
+  на семейства (`Inter_700Bold`/`Inter_900Black`). Сейчас жирность — через
+  `style={{ fontFamily: ... }}` в каждом `<Text>`. Чтобы перейти на классы,
+  нужно домапить `tailwind.config.js` и пройтись по call-sites (косметика).
+- **UI-кит** перенесён полностью, включая `SearchableSelect` и `Toast`.
+- **Восстановление пароля** — экран-заглушка, ждёт бэк (`/password-reset/*`).
+- **Push** — `expo-notifications` не ставился, ждёт device-token эндпоинт.
 
-Полный план и Definition of Done на каждый экран — в
-[`../sct-web/MOBILE_PORTING_GUIDE.md`](../sct-web/MOBILE_PORTING_GUIDE.md).
-Текущий прогресс — в [`PORTING_STATUS.md`](./PORTING_STATUS.md).
+Прогресс и таблица паритета с вебом — в [`PORTING_STATUS.md`](./PORTING_STATUS.md).
+Нативные настройки (deep links, иконки, EAS, push) — в [`NATIVE_SETUP.md`](./NATIVE_SETUP.md).

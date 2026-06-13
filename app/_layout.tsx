@@ -68,6 +68,7 @@ export default function RootLayout() {
               <Stack.Screen name="register" options={{ presentation: 'modal', headerShown: true, title: 'Регистрация' }} />
               <Stack.Screen name="forgot-password" options={{ presentation: 'modal', headerShown: true, title: 'Восстановление пароля' }} />
               <Stack.Screen name="app-lock/setup" options={{ presentation: 'modal', headerShown: true, title: 'Код-пароль' }} />
+              <Stack.Screen name="app-lock/intro" options={{ headerShown: false }} />
             </Stack>
           </AppLockGate>
           <ToastViewport />

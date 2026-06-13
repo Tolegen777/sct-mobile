@@ -4,6 +4,7 @@
  */
 import * as SecureStore from 'expo-secure-store'
 
+// Очищаются при logout / выключении замка.
 const KEYS = {
   enabled: 'sct_lock_enabled',
   biometric: 'sct_lock_biometric',
@@ -11,6 +12,10 @@ const KEYS = {
   hash: 'sct_lock_hash',
   attempts: 'sct_lock_attempts',
 } as const
+
+// НЕ очищается при logout: «предложение после входа уже показывали».
+// Иначе после каждого выхода предложение всплывало бы снова.
+const PROMPT_SEEN_KEY = 'sct_lock_prompt_seen'
 
 export interface AppLockConfig {
   enabled: boolean
@@ -60,6 +65,25 @@ export async function getFailedAttempts(): Promise<number> {
 
 export async function setFailedAttempts(n: number): Promise<void> {
   await SecureStore.setItemAsync(KEYS.attempts, String(n))
+}
+
+/** Показывали ли уже предложение «включить код-пароль» после входа. */
+export async function getPromptSeen(): Promise<boolean> {
+  return (await SecureStore.getItemAsync(PROMPT_SEEN_KEY)) === '1'
+}
+
+export async function setPromptSeen(): Promise<void> {
+  await SecureStore.setItemAsync(PROMPT_SEEN_KEY, '1')
+}
+
+/**
+ * Стоит ли после входа показать предложение включить код-пароль:
+ * только если замок ещё не включён И предложение раньше не показывали.
+ */
+export async function shouldOfferLockPrompt(): Promise<boolean> {
+  const cfg = await loadConfig()
+  if (cfg.enabled) return false
+  return !(await getPromptSeen())
 }
 
 /** Полностью стереть замок (при выключении/выходе из сессии). */

@@ -16,6 +16,7 @@ import { registerClient } from '@/features/auth/api'
 import { registerSchema, splitFullName, type RegisterFormValues } from '@/features/auth/schemas'
 import { parseApiError } from '@/features/auth/errors'
 import { unformatPhone } from '@/shared/lib/phone'
+import { shouldOfferLockPrompt } from '@/features/app-lock/storage'
 
 const KNOWN_FIELDS = ['first_name', 'last_name', 'full_name', 'phone', 'password', 'password_confirm']
 
@@ -49,8 +50,13 @@ export default function RegisterScreen() {
         return
       }
       setSession(data.access, data.refresh, data.user)
-      if (router.canGoBack()) router.back()
-      else router.replace('/')
+      if (await shouldOfferLockPrompt()) {
+        router.replace('/app-lock/intro')
+      } else if (router.canGoBack()) {
+        router.back()
+      } else {
+        router.replace('/')
+      }
     } catch (err) {
       const parsed = parseApiError(err, 'Не удалось зарегистрироваться.')
       for (const [field, message] of Object.entries(parsed.fields)) {

@@ -17,6 +17,7 @@ import { loginClient } from '@/features/auth/api'
 import { loginSchema, type LoginFormValues } from '@/features/auth/schemas'
 import { parseApiError } from '@/features/auth/errors'
 import { unformatPhone } from '@/shared/lib/phone'
+import { shouldOfferLockPrompt } from '@/features/app-lock/storage'
 
 export default function LoginScreen() {
   const router = useRouter()
@@ -46,8 +47,13 @@ export default function LoginScreen() {
         return
       }
       setSession(data.access, data.refresh, data.user)
-      if (router.canGoBack()) router.back()
-      else router.replace('/')
+      if (await shouldOfferLockPrompt()) {
+        router.replace('/app-lock/intro')
+      } else if (router.canGoBack()) {
+        router.back()
+      } else {
+        router.replace('/')
+      }
     } catch (err) {
       const parsed = parseApiError(err, 'Неверный телефон или пароль.')
       for (const [field, message] of Object.entries(parsed.fields)) {

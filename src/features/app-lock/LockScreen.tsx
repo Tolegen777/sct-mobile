@@ -1,6 +1,6 @@
 /**
  * Экран замка (оверлей). Авто-вызов биометрии при появлении, ввод пина,
- * счётчик попыток, выход после MAX_ATTEMPTS.
+ * счётчик попыток, выход после MAX_ATTEMPTS. Фирменный navy-фон + приветствие.
  *
  * Очистку хранилища при выходе делает AppLockGate (по переходу phase→guest),
  * поэтому здесь достаточно вызвать authStore.logout() и увести на /login.
@@ -10,6 +10,7 @@ import { View, Text, Pressable } from 'react-native'
 import { useRouter } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { useAuthStore } from '@/features/auth/store'
+import type { ClientProfile } from '@/shared/api/types'
 import { PinKeypad } from './PinKeypad'
 import { useAppLockStore } from './store'
 import { hashPin } from './crypto'
@@ -17,14 +18,25 @@ import * as storage from './storage'
 import { isBiometricAvailable, authenticateBiometric } from './biometrics'
 import { PIN_LENGTH, MAX_ATTEMPTS } from './config'
 
+function initials(p: ClientProfile | null): string {
+  if (!p) return '—'
+  const f = p.first_name?.charAt(0) ?? ''
+  const l = p.last_name?.charAt(0) ?? ''
+  return (f + l).toUpperCase() || (p.phone?.slice(-2) ?? '—')
+}
+
 export function LockScreen() {
   const router = useRouter()
   const unlock = useAppLockStore((s) => s.unlock)
   const biometricEnabled = useAppLockStore((s) => s.biometricEnabled)
   const logout = useAuthStore((s) => s.logout)
+  const profile = useAuthStore((s) => s.profile)
 
   const [entered, setEntered] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  const firstName = profile?.first_name?.trim()
+  const greeting = firstName ? `Здравствуйте, ${firstName}` : 'С возвращением'
 
   const tryBiometric = async () => {
     if (!(await isBiometricAvailable())) return
@@ -70,25 +82,27 @@ export function LockScreen() {
   const onDelete = () => setEntered((p) => p.slice(0, -1))
 
   return (
-    <View className="absolute inset-0 z-50 bg-white px-6 pt-24 pb-10">
+    <View className="absolute inset-0 z-50 bg-navy px-6 pt-24 pb-10">
       <View className="flex-1 items-center justify-between">
-        <View className="items-center gap-3">
-          <View className="h-16 w-16 items-center justify-center rounded-2xl bg-brandBlue">
-            <Ionicons name="lock-closed" size={28} color="#fff" />
-          </View>
-          <Text
-            style={{ fontFamily: 'Inter_900Black' }}
-            className="text-lg uppercase text-textPrimary"
-          >
-            Введите код
-          </Text>
-          {error ? (
-            <Text className="text-sm text-red-600">{error}</Text>
-          ) : (
-            <Text className="text-sm text-textSecondary">
-              Для входа в приложение
+        <View className="items-center gap-4">
+          <View className="h-14 w-14 items-center justify-center rounded-full bg-brandBlue">
+            <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-lg text-white">
+              {initials(profile)}
             </Text>
-          )}
+          </View>
+          <View className="items-center gap-1">
+            <Text
+              style={{ fontFamily: 'Inter_700Bold' }}
+              className="text-base text-white"
+            >
+              {greeting}
+            </Text>
+            {error ? (
+              <Text className="text-sm text-brandYellow">{error}</Text>
+            ) : (
+              <Text className="text-sm text-white/60">Введите код для входа</Text>
+            )}
+          </View>
         </View>
 
         <PinKeypad
@@ -96,6 +110,7 @@ export function LockScreen() {
           total={PIN_LENGTH}
           onDigit={onDigit}
           onDelete={onDelete}
+          tone="light"
         />
 
         <View className="w-full items-center gap-4">
@@ -104,14 +119,12 @@ export function LockScreen() {
               onPress={tryBiometric}
               className="flex-row items-center gap-2"
             >
-              <Ionicons name="scan-outline" size={20} color="#18202A" />
-              <Text className="text-textPrimary">Использовать Face ID</Text>
+              <Ionicons name="scan-outline" size={20} color="#F2C94C" />
+              <Text className="text-white">Войти по Face ID</Text>
             </Pressable>
           ) : null}
           <Pressable onPress={handleLogout}>
-            <Text className="text-sm text-textSecondary underline">
-              Войти паролем
-            </Text>
+            <Text className="text-sm text-white/60 underline">Войти паролем</Text>
           </Pressable>
         </View>
       </View>

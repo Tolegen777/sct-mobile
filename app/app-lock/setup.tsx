@@ -2,10 +2,13 @@
  * Экран задания/смены пина: шаг «ввести» → шаг «повторить».
  * Используется и для первичной установки, и для смены кода.
  * Маршрут защищён RequireAuth (пин задаёт только авторизованный юзер).
+ *
+ * Параметр `from=intro` означает, что пришли с экрана-предложения после входа —
+ * после сохранения уводим на главную, а не назад (назад там — стек логина).
  */
 import { useState } from 'react'
 import { View, Text } from 'react-native'
-import { useRouter } from 'expo-router'
+import { useRouter, useLocalSearchParams } from 'expo-router'
 import { RequireAuth } from '@/shared/ui/RequireAuth'
 import { PinKeypad } from '@/features/app-lock/PinKeypad'
 import { useAppLockStore } from '@/features/app-lock/store'
@@ -23,6 +26,7 @@ export default function AppLockSetupScreen() {
 
 function SetupForm() {
   const router = useRouter()
+  const { from } = useLocalSearchParams<{ from?: string }>()
   const [step, setStep] = useState<'enter' | 'confirm'>('enter')
   const [first, setFirst] = useState('')
   const [entered, setEntered] = useState('')
@@ -35,7 +39,8 @@ function SetupForm() {
     await storage.setEnabled(true)
     await storage.setFailedAttempts(0)
     await useAppLockStore.getState().reloadConfig()
-    router.back()
+    if (from === 'intro') router.replace('/')
+    else router.back()
   }
 
   const onComplete = (pin: string) => {
@@ -71,18 +76,18 @@ function SetupForm() {
   const onDelete = () => setEntered((p) => p.slice(0, -1))
 
   return (
-    <View className="flex-1 items-center justify-center bg-white px-6 gap-10">
+    <View className="flex-1 items-center justify-center bg-navy px-6 gap-10">
       <View className="items-center gap-2">
         <Text
-          style={{ fontFamily: 'Inter_900Black' }}
-          className="text-lg uppercase text-textPrimary"
+          style={{ fontFamily: 'Inter_700Bold' }}
+          className="text-base text-white"
         >
           {step === 'enter' ? 'Придумайте код' : 'Повторите код'}
         </Text>
         {error ? (
-          <Text className="text-sm text-red-600">{error}</Text>
+          <Text className="text-sm text-brandYellow">{error}</Text>
         ) : (
-          <Text className="text-sm text-textSecondary">
+          <Text className="text-sm text-white/60">
             {PIN_LENGTH} цифры для входа в приложение
           </Text>
         )}
@@ -93,6 +98,7 @@ function SetupForm() {
         total={PIN_LENGTH}
         onDigit={onDigit}
         onDelete={onDelete}
+        tone="light"
       />
     </View>
   )
