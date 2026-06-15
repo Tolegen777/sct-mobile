@@ -1,17 +1,20 @@
 /**
- * Визард «Добавить авто» — функциональный порт features/garage/add-car/*.
- * Шаги: Марка → Модель → Параметры (год/кузов/поколение) → Модификация → Номер.
- * Использует реальный конфигуратор cars/marks→models→filters→modifications и
- * создаёт авто через useCreateCarMutation (modification_source_id + форма).
+ * Визард «Добавить авто» — порт features/garage/add-car/* (sct-web), приведён
+ * к дизайну screens/add-car. Шаги: Марка → Модель → Поколение →
+ * Характеристики → Номер.
  *
- * Шаг «Параметры» (порт web SpecsStep) сужает список модификаций по
- * году/кузову/поколению через `/cars/filters/`. Это убирает плоский дамп всех
- * модификаций марки+модели (для популярных авто — десятки) и снижает риск 502
- * на тяжёлых выборках. Поколение/«Показать модификации» ведёт к шагу выбора.
+ * Структура по макету:
+ *   - верх: прогресс-бар + «‹ N. Название шага» (шаг назад) + «Ввести VIN код»;
+ *   - тело: белая карточка с контентом шага;
+ *   - шаг «Поколение» сужает выборку по году/кузову/поколению через
+ *     /cars/filters/; шаг «Характеристики» — chip-фильтры (топливо/объём/
+ *     мощность/КПП/привод/руль) + сетка подходящих авто + «Выбрать авто».
+ *   - VIN вводится опционально заранее (модалка) и подставляется в финал.
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -19,6 +22,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { RequireAuth } from '@/shared/ui/RequireAuth'
 import { Input } from '@/shared/ui/Input'
 import { Button } from '@/shared/ui/Button'
+import { BottomBar } from '@/shared/ui/BottomBar'
+import { Modal } from '@/shared/ui/Modal'
 import { Spinner } from '@/shared/ui/Spinner'
 import { SafeImage } from '@/shared/ui/SafeImage'
 import { cn } from '@/shared/lib/cn'
@@ -31,16 +36,28 @@ import {
   useModelsQuery,
   useModificationsQuery,
 } from '@/features/garage/add-car/queries'
-import type { Mark, Model, Modification } from '@/features/garage/add-car/types'
+import type {
+  CarsQuery,
+  CodeNameOption,
+  Mark,
+  Model,
+  Modification,
+} from '@/features/garage/add-car/types'
 
-/** Параметры сужения модификаций (год/кузов/поколение) — как web SpecsValues. */
+/** Параметры сужения (год/кузов/поколение + характеристики) — как web SpecsValues. */
 interface SpecsValues {
   year?: number
   body_type?: number
   generation?: number
+  fuel_type?: string
+  engine_volume?: number
+  horse_power?: number
+  transmission_type?: string
+  drive_type?: string
+  steering_wheel_position?: string
 }
 
-const STEPS = ['Марка', 'Модель', 'Параметры', 'Модификация', 'Номер']
+const STEPS = ['Марка', 'Модель', 'Поколение', 'Характеристики', 'Номер']
 
 export default function AddCarScreen() {
   return (
@@ -60,6 +77,16 @@ function AddCarWizard() {
   const [modification, setModification] = useState<Modification | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
+  // VIN — опционально заранее, подставляется в финальную форму.
+  const [vin, setVin] = useState('')
+  const [vinDraft, setVinDraft] = useState('')
+  const [vinOpen, setVinOpen] = useState(false)
+
+  const onBack = () => {
+    if (step > 0) setStep((s) => Math.max(0, s - 1))
+    else router.back()
+  }
+
   const onPickMark = (m: Mark) => {
     if (mark?.id !== m.id) {
       setModel(null)
@@ -78,13 +105,11 @@ function AddCarWizard() {
     setStep(2)
   }
   const onChangeSpecs = (next: SpecsValues) => {
-    // Любая смена параметров меняет набор модификаций — сбрасываем выбор.
     setSpecs(next)
     setModification(null)
   }
-  const onPickMod = (mod: Modification) => {
-    setModification(mod)
-    setStep(4)
+  const confirmMod = () => {
+    if (modification) setStep(4)
   }
 
   const submit = async (v: FinalValues) => {
@@ -109,16 +134,20 @@ function AddCarWizard() {
 
   return (
     <View className="flex-1 bg-surfaceLight">
-      <Stack.Screen
-        options={{
-          headerShown: true,
-          title: 'Добавить авто',
-          headerBackVisible: true,
+      <Stack.Screen options={{ headerShown: false }} />
+
+      <WizardHeader
+        step={step}
+        onBack={onBack}
+        onVin={() => {
+          setVinDraft(vin)
+          setVinOpen(true)
         }}
       />
-      <StepHeader step={step} mark={mark} model={model} specs={specs} />
 
-      {step === 0 ? <MarkPicker selectedId={mark?.id ?? null} onSelect={onPickMark} /> : null}
+      {step === 0 ? (
+        <MarkPicker selectedId={mark?.id ?? null} onSelect={onPickMark} vin={vin} onVin={setVin} />
+      ) : null}
       {step === 1 && mark ? (
         <ModelPicker markId={mark.id} selectedId={model?.id ?? null} onSelect={onPickModel} />
       ) : null}
@@ -136,57 +165,84 @@ function AddCarWizard() {
           markId={mark.id}
           modelId={model.id}
           specs={specs}
+          onChangeSpecs={onChangeSpecs}
           selectedId={modification?.source_id ?? null}
-          onSelect={onPickMod}
+          onSelect={setModification}
+          onConfirm={confirmMod}
         />
       ) : null}
       {step === 4 && modification ? (
-        <FinalForm onSubmit={submit} serverError={serverError} />
+        <FinalForm defaultVin={vin} onSubmit={submit} serverError={serverError} />
       ) : null}
+
+      <Modal open={vinOpen} onClose={() => setVinOpen(false)} title="VIN код">
+        <Input
+          label="Введите VIN код (необязательно)"
+          placeholder="VIN код"
+          autoCapitalize="characters"
+          maxLength={17}
+          value={vinDraft}
+          onChangeText={(t) => setVinDraft(t.toUpperCase())}
+        />
+        <View className="mt-5">
+          <Button
+            fullWidth
+            onPress={() => {
+              setVin(vinDraft)
+              setVinOpen(false)
+            }}
+          >
+            Подтвердить
+          </Button>
+        </View>
+      </Modal>
     </View>
   )
 }
 
-function StepHeader({
-  step,
-  mark,
-  model,
-  specs,
-}: {
-  step: number
-  mark: Mark | null
-  model: Model | null
-  specs: SpecsValues
-}) {
-  const summary = [mark?.name, model?.name, specs.year ? String(specs.year) : null]
-    .filter(Boolean)
-    .join(' · ')
+// --- Верхняя панель: прогресс + «‹ N. Шаг» + кнопка VIN ---
+function WizardHeader({ step, onBack, onVin }: { step: number; onBack: () => void; onVin: () => void }) {
+  const insets = useSafeAreaInsets()
+  const progress = ((step + 1) / STEPS.length) * 100
+
   return (
-    <View className="border-b border-borderLight bg-white px-4 py-3">
-      <View className="flex-row gap-2">
-        {STEPS.map((label, i) => (
-          <View key={label} className="flex-1 items-center">
-            <View className={cn('h-1.5 w-full rounded-full', i <= step ? 'bg-brandBlue' : 'bg-borderLight')} />
-            <Text
-              style={{ fontFamily: 'Inter_700Bold' }}
-              className={cn('mt-1.5 text-[9px] uppercase tracking-wide', i === step ? 'text-brandBlue' : 'text-textSecondary')}
-            >
-              {label}
-            </Text>
-          </View>
-        ))}
+    <View style={{ paddingTop: insets.top + 8 }} className="gap-3 px-4 pb-3">
+      <View className="h-1.5 overflow-hidden rounded-full bg-surfaceMuted">
+        <View className="h-full rounded-full bg-brandYellow" style={{ width: `${progress}%` }} />
       </View>
-      {summary ? (
-        <Text numberOfLines={1} className="mt-2 text-[11px] uppercase tracking-wide text-textSecondary">
-          {summary}
-        </Text>
+
+      <View className="flex-row items-center justify-between gap-3">
+        <Pressable onPress={onBack} hitSlop={8} className="flex-row items-center gap-2">
+          <Ionicons name="chevron-back" size={24} color="#18202A" />
+          <Text style={{ fontFamily: 'Inter_900Black' }} className="text-2xl uppercase tracking-tight text-textPrimary">
+            {step + 1}. {STEPS[step]}
+          </Text>
+        </Pressable>
+      </View>
+
+      {step <= 2 ? (
+        <Pressable onPress={onVin} className="self-start rounded-sct bg-brandBlue px-6 py-3 active:opacity-90">
+          <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-white">
+            Ввести VIN код
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   )
 }
 
 // --- Шаг 1: Марка ---
-function MarkPicker({ selectedId, onSelect }: { selectedId: number | null; onSelect: (m: Mark) => void }) {
+function MarkPicker({
+  selectedId,
+  onSelect,
+  vin,
+  onVin,
+}: {
+  selectedId: number | null
+  onSelect: (m: Mark) => void
+  vin: string
+  onVin: (v: string) => void
+}) {
   const { data, isLoading, isError } = useMarksQuery()
   const [search, setSearch] = useState('')
   const [showAll, setShowAll] = useState(false)
@@ -206,41 +262,56 @@ function MarkPicker({ selectedId, onSelect }: { selectedId: number | null; onSel
   if (isError || !data) return <ErrorPlate text="Не удалось загрузить список марок." />
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
-      <Input label="Поиск марки" placeholder="Например BMW…" value={search} onChangeText={setSearch} autoCapitalize="none" />
-      <View className="flex-row flex-wrap gap-3">
-        {visible.map((mark) => (
-          <Pressable
-            key={mark.id}
-            onPress={() => onSelect(mark)}
-            className={cn('w-[31%] items-center gap-2 rounded-sct border bg-white p-4', mark.id === selectedId ? 'border-brandBlue' : 'border-borderLight')}
-          >
-            <SafeImage
-              uri={mark.logo_url}
-              resizeMode="contain"
-              className="h-10 w-10"
-              fallback={
-                <View className="h-10 w-10 items-center justify-center rounded-full bg-surfaceLight">
-                  <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[11px] uppercase text-textSecondary">
-                    {mark.name.slice(0, 2)}
-                  </Text>
-                </View>
-              }
-            />
-            <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-[11px] uppercase text-textPrimary">
-              {mark.name}
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <StepCard>
+        <Input
+          label="Введите VIN код (необязательно)"
+          placeholder="VIN код"
+          autoCapitalize="characters"
+          maxLength={17}
+          value={vin}
+          onChangeText={(t) => onVin(t.toUpperCase())}
+        />
+        <Input label="Поиск марки" placeholder="Например BMW…" value={search} onChangeText={setSearch} autoCapitalize="none" />
+
+        <View className="flex-row flex-wrap gap-2">
+          {visible.map((mark) => (
+            <Pressable
+              key={mark.id}
+              onPress={() => onSelect(mark)}
+              className={cn(
+                'w-[31%] items-center gap-2 rounded-sct border bg-white p-3',
+                mark.id === selectedId ? 'border-brandBlue' : 'border-borderLight',
+              )}
+            >
+              <SafeImage
+                uri={mark.logo_url}
+                resizeMode="contain"
+                className="h-10 w-10"
+                fallback={
+                  <View className="h-10 w-10 items-center justify-center rounded-full bg-surfaceLight">
+                    <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[11px] uppercase text-textSecondary">
+                      {mark.name.slice(0, 2)}
+                    </Text>
+                  </View>
+                }
+              />
+              <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-[11px] uppercase text-textPrimary">
+                {mark.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {filtered.length === 0 ? <ErrorPlate text={`По запросу «${search}» марки не найдены.`} muted /> : null}
+        {canExpand ? (
+          <Pressable onPress={() => setShowAll(true)} className="items-center rounded-sct border-2 border-dashed border-borderLight py-4">
+            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+              Показать все марки
             </Text>
           </Pressable>
-        ))}
-      </View>
-      {filtered.length === 0 ? <ErrorPlate text={`По запросу «${search}» марки не найдены.`} muted /> : null}
-      {canExpand ? (
-        <Pressable onPress={() => setShowAll(true)} className="items-center rounded-sct border-2 border-dashed border-borderLight py-4">
-          <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-            Показать все марки
-          </Text>
-        </Pressable>
-      ) : null}
+        ) : null}
+      </StepCard>
     </ScrollView>
   )
 }
@@ -249,40 +320,56 @@ function MarkPicker({ selectedId, onSelect }: { selectedId: number | null; onSel
 function ModelPicker({ markId, selectedId, onSelect }: { markId: number; selectedId: number | null; onSelect: (m: Model) => void }) {
   const { data, isLoading, isError } = useModelsQuery(markId)
   const [search, setSearch] = useState('')
+  const [showAll, setShowAll] = useState(false)
   const q = search.trim().toLowerCase()
   const filtered = useMemo(() => {
     const all = data?.results ?? []
     if (!q) return all
     return all.filter((m) => [m.name, m.name_ru, m.display_name].some((v) => v?.toLowerCase().includes(q)))
   }, [data, q])
+  const visible = q || showAll ? filtered : filtered.slice(0, 8)
+  const canExpand = !q && !showAll && filtered.length > visible.length
 
   if (isLoading) return <Centered><Spinner /></Centered>
   if (isError || !data) return <ErrorPlate text="Не удалось загрузить модели." />
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }} keyboardShouldPersistTaps="handled">
-      <Input label="Поиск модели" placeholder="Модель…" value={search} onChangeText={setSearch} autoCapitalize="none" />
-      {filtered.map((m) => (
-        <Pressable
-          key={m.id}
-          onPress={() => onSelect(m)}
-          className={cn('flex-row items-center justify-between rounded-sct border bg-white p-4', m.id === selectedId ? 'border-brandBlue' : 'border-borderLight')}
-        >
-          <View className="flex-1">
-            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-base uppercase text-textPrimary">{m.name}</Text>
-            <Text className="mt-0.5 text-[11px] uppercase tracking-wide text-textSecondary">
-              {m.year_from}{m.year_to ? `–${m.year_to}` : ''} · {m.modifications_count} модиф.
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <StepCard>
+        <Input label="Выбор модели" placeholder="Начните вводить модель…" value={search} onChangeText={setSearch} autoCapitalize="none" />
+
+        <View className="flex-row flex-wrap gap-2">
+          {visible.map((m) => (
+            <Pressable
+              key={m.id}
+              onPress={() => onSelect(m)}
+              className={cn(
+                'w-[48%] rounded-sct border bg-white p-4',
+                m.id === selectedId ? 'border-brandBlue bg-blue-50' : 'border-borderLight',
+              )}
+            >
+              <Text style={{ fontFamily: 'Inter_900Black' }} className="text-sm uppercase text-textPrimary">{m.name}</Text>
+              <Text className="mt-1 text-[10px] uppercase tracking-wide text-textSecondary">
+                {m.year_from}{m.year_to ? `–${m.year_to}` : ''} · {m.modifications_count} модиф.
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        {filtered.length === 0 ? <ErrorPlate text="Модели не найдены." muted /> : null}
+        {canExpand ? (
+          <Pressable onPress={() => setShowAll(true)} className="items-center rounded-sct border-2 border-dashed border-borderLight py-4">
+            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+              Показать все модели ({filtered.length})
             </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#D9DEE5" />
-        </Pressable>
-      ))}
-      {filtered.length === 0 ? <ErrorPlate text="Модели не найдены." muted /> : null}
+          </Pressable>
+        ) : null}
+      </StepCard>
     </ScrollView>
   )
 }
 
-// --- Шаг 3: Параметры (год / кузов / поколение) — порт web SpecsStep ---
+// --- Шаг 3: Поколение (год / кузов / поколение) ---
 const YEAR_LIMIT = 12
 
 function SpecsPicker({
@@ -298,10 +385,7 @@ function SpecsPicker({
   onChange: (next: SpecsValues) => void
   onContinue: () => void
 }) {
-  const query = useMemo(
-    () => ({ mark: markId, model: modelId, ...values }),
-    [markId, modelId, values],
-  )
+  const query = useMemo(() => ({ mark: markId, model: modelId, ...values }), [markId, modelId, values])
   const { data, isFetching, isError } = useFiltersQuery(query)
   const [showAllYears, setShowAllYears] = useState(false)
 
@@ -326,179 +410,219 @@ function SpecsPicker({
 
   return (
     <View className="flex-1">
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 24, paddingBottom: 24 }}>
-        {isError ? (
-          <View className="rounded-sct border border-amber-200 bg-amber-50 p-3">
-            <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-sm text-amber-800">
-              Сервер не смог посчитать параметры под эту модель.
-            </Text>
-            <Text className="mt-1 text-xs text-amber-800/80">
-              Можно пропустить и сразу перейти к выбору модификации.
-            </Text>
-          </View>
-        ) : null}
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+        <StepCard>
+          {isError ? (
+            <View className="rounded-sct border border-amber-200 bg-amber-50 p-3">
+              <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-sm text-amber-800">
+                Сервер не смог посчитать параметры под эту модель.
+              </Text>
+              <Text className="mt-1 text-xs text-amber-800/80">
+                Можно пропустить и сразу перейти к выбору модификации.
+              </Text>
+            </View>
+          ) : null}
 
-        {/* Год выпуска */}
-        <View className="gap-3">
-          <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-            Год выпуска
-          </Text>
-          {years.length === 0 ? (
-            <Text className="text-sm text-textSecondary/70">
-              Нет доступных годов — переходите к модификациям.
-            </Text>
-          ) : (
-            <>
-              <View className="flex-row flex-wrap gap-2">
-                {visibleYears.map((y) => (
-                  <Pressable
-                    key={y}
-                    onPress={() => selectYear(y)}
-                    className={cn(
-                      'min-w-[22%] items-center rounded-sct border px-3 py-3',
-                      values.year === y ? 'border-brandBlue bg-brandBlue' : 'border-borderLight bg-white',
-                    )}
-                  >
-                    <Text
-                      style={{ fontFamily: 'Inter_900Black' }}
-                      className={cn('text-base', values.year === y ? 'text-white' : 'text-textPrimary')}
-                    >
-                      {y}
+          <View className="gap-3">
+            <SectionLabel>Год выпуска</SectionLabel>
+            {years.length === 0 ? (
+              <Text className="text-sm text-textSecondary/70">Нет доступных годов — переходите к модификациям.</Text>
+            ) : (
+              <>
+                <View className="flex-row flex-wrap gap-2">
+                  {visibleYears.map((y) => (
+                    <SelectTile key={y} active={values.year === y} onPress={() => selectYear(y)} className="min-w-[22%] items-center">
+                      <Text
+                        style={{ fontFamily: 'Inter_900Black' }}
+                        className={cn('text-sm', values.year === y ? 'text-brandBlue' : 'text-textPrimary')}
+                      >
+                        {y}
+                      </Text>
+                    </SelectTile>
+                  ))}
+                </View>
+                {!showAllYears && sortedYears.length > YEAR_LIMIT ? (
+                  <Pressable onPress={() => setShowAllYears(true)} className="items-center rounded-sct border-2 border-dashed border-borderLight py-3">
+                    <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+                      Показать все года ({sortedYears.length})
                     </Text>
                   </Pressable>
+                ) : null}
+              </>
+            )}
+          </View>
+
+          {values.year !== undefined && bodyTypes.length > 0 ? (
+            <View className="gap-3 border-t border-borderLight pt-5">
+              <SectionLabel>Тип кузова</SectionLabel>
+              <View className="flex-row flex-wrap gap-2">
+                {bodyTypes.map((b) => (
+                  <SelectTile key={b.id} active={values.body_type === b.id} onPress={() => selectBody(b.id)}>
+                    <Text
+                      style={{ fontFamily: 'Inter_900Black' }}
+                      className={cn('text-[12px] uppercase', values.body_type === b.id ? 'text-brandBlue' : 'text-textPrimary')}
+                    >
+                      {b.name || b.code}
+                    </Text>
+                  </SelectTile>
                 ))}
               </View>
-              {!showAllYears && sortedYears.length > YEAR_LIMIT ? (
-                <Pressable
-                  onPress={() => setShowAllYears(true)}
-                  className="items-center rounded-sct border-2 border-dashed border-borderLight py-3"
-                >
-                  <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-                    Показать все года ({sortedYears.length})
-                  </Text>
-                </Pressable>
-              ) : null}
-            </>
-          )}
-        </View>
+            </View>
+          ) : null}
 
-        {/* Тип кузова — после выбора года */}
-        {values.year !== undefined && bodyTypes.length > 0 ? (
-          <View className="gap-3 border-t border-borderLight pt-5">
-            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-              Тип кузова
-            </Text>
-            <View className="flex-row flex-wrap gap-2">
-              {bodyTypes.map((b) => (
+          {values.year !== undefined && generations.length > 0 ? (
+            <View className="gap-3 border-t border-borderLight pt-5">
+              <SectionLabel>Поколение</SectionLabel>
+              {generations.map((g) => (
                 <Pressable
-                  key={b.id}
-                  onPress={() => selectBody(b.id)}
-                  className={cn(
-                    'rounded-sct border px-4 py-3',
-                    values.body_type === b.id ? 'border-brandBlue bg-brandBlue' : 'border-borderLight bg-white',
-                  )}
+                  key={g.id}
+                  onPress={() => selectGeneration(g.id)}
+                  className={cn('rounded-sct border bg-white p-4', values.generation === g.id ? 'border-brandBlue bg-blue-50' : 'border-borderLight')}
                 >
-                  <Text
-                    style={{ fontFamily: 'Inter_900Black' }}
-                    className={cn('text-[12px] uppercase', values.body_type === b.id ? 'text-white' : 'text-textPrimary')}
-                  >
-                    {b.name || b.code}
+                  <Text style={{ fontFamily: 'Inter_900Black' }} className="text-sm uppercase text-textPrimary">{g.display_name}</Text>
+                  <Text className="mt-0.5 text-[11px] uppercase tracking-widest text-textSecondary">
+                    {g.year_from}{g.year_to ? `–${g.year_to}` : ''}
                   </Text>
                 </Pressable>
               ))}
             </View>
-          </View>
-        ) : null}
-
-        {/* Поколение — после выбора года */}
-        {values.year !== undefined && generations.length > 0 ? (
-          <View className="gap-3 border-t border-borderLight pt-5">
-            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-              Поколение
-            </Text>
-            {generations.map((g) => (
-              <Pressable
-                key={g.id}
-                onPress={() => selectGeneration(g.id)}
-                className={cn(
-                  'rounded-sct border bg-white p-4',
-                  values.generation === g.id ? 'border-brandBlue' : 'border-borderLight',
-                )}
-              >
-                <Text style={{ fontFamily: 'Inter_900Black' }} className="text-sm uppercase text-textPrimary">
-                  {g.display_name}
-                </Text>
-                <Text className="mt-0.5 text-[11px] uppercase tracking-widest text-textSecondary">
-                  {g.year_from}{g.year_to ? `–${g.year_to}` : ''}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        ) : null}
+          ) : null}
+        </StepCard>
       </ScrollView>
 
-      {/* Нижняя панель: перейти к модификациям с текущими фильтрами (аналог
-          web-fallback «Далее»). Можно пропустить параметры целиком. */}
-      <View className="border-t border-borderLight bg-white px-4 py-3">
+      <BottomBar>
         <Button fullWidth onPress={onContinue}>
           {count > 0 ? `Показать модификации (${count})` : 'К выбору модификации'}
         </Button>
-      </View>
+      </BottomBar>
     </View>
   )
 }
 
-// --- Шаг 4: Модификация ---
+// --- Шаг 4: Характеристики (chip-фильтры + сетка модификаций) ---
 function ModificationPicker({
   markId,
   modelId,
   specs,
+  onChangeSpecs,
   selectedId,
   onSelect,
+  onConfirm,
 }: {
   markId: number
   modelId: number
   specs: SpecsValues
+  onChangeSpecs: (next: SpecsValues) => void
   selectedId: string | null
   onSelect: (m: Modification) => void
+  onConfirm: () => void
 }) {
-  const query = useMemo(
-    () => ({ mark: markId, model: modelId, ...specs, page_size: 100 }),
-    [markId, modelId, specs],
-  )
-  const { data, isLoading, isError } = useModificationsQuery(query)
+  const baseQuery: CarsQuery = useMemo(() => ({ mark: markId, model: modelId, ...specs }), [markId, modelId, specs])
+  const { data: filters } = useFiltersQuery(baseQuery)
+  const { data, isLoading, isError } = useModificationsQuery({ ...baseQuery, page_size: 100 })
   const mods = data?.results ?? []
+  const total = data?.count ?? mods.length
 
-  if (isLoading) return <Centered><Spinner /></Centered>
-  if (isError) return <ErrorPlate text="Не удалось загрузить характеристики." />
-  if (mods.length === 0) return <ErrorPlate text="Для этой модели нет модификаций." muted />
+  const setFilter = (patch: Partial<SpecsValues>) => onChangeSpecs({ ...specs, ...patch })
+
+  const fuelOpts = (filters?.fuel_types ?? []).map((f) => ({ value: f.value, label: f.label || f.value }))
+  const volumeOpts = (filters?.engine_volumes ?? []).map((o) => ({
+    value: String(o.value),
+    label: formatEngineVolume(o.value) ?? String(o.value),
+  }))
+  const powerOpts = (filters?.horse_powers ?? []).map((o) => ({ value: String(o.value), label: String(o.value) }))
+  const transOpts = mapCodeName(filters?.transmission_types)
+  const driveOpts = mapCodeName(filters?.drive_types)
+  const steerOpts = mapCodeName(filters?.steering_positions)
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <Text className="text-[12px] uppercase tracking-widest text-textSecondary">
-        Выберите модификацию ({mods.length})
-      </Text>
-      {mods.map((mod) => {
-        const label = mod.full_title || mod.name || mod.display_name || mod.title || `Модификация #${mod.id}`
-        const vol = formatEngineVolume(mod.engine_volume ?? null)
-        const power = mod.power_display || (mod.horse_power ? `${mod.horse_power} л.с.` : '')
-        const meta = [vol, power, mod.transmission_type_label, mod.fuel_type_label].filter(Boolean).join(' · ')
-        return (
-          <Pressable
-            key={mod.source_id}
-            onPress={() => onSelect(mod)}
-            className={cn('rounded-sct border bg-white p-4', mod.source_id === selectedId ? 'border-brandBlue' : 'border-borderLight')}
-          >
-            <Text style={{ fontFamily: 'Inter_900Black' }} className="text-sm uppercase text-textPrimary">{label}</Text>
-            {meta ? <Text className="mt-1 text-[11px] uppercase tracking-wide text-textSecondary">{meta}</Text> : null}
-          </Pressable>
-        )
-      })}
-    </ScrollView>
+    <View className="flex-1">
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 24 }}>
+        <StepCard>
+          <FilterChips label="Тип топлива" options={fuelOpts} value={specs.fuel_type} onToggle={(v) => setFilter({ fuel_type: v })} />
+          <FilterChips
+            label="Объём двигателя"
+            options={volumeOpts}
+            value={specs.engine_volume !== undefined ? String(specs.engine_volume) : undefined}
+            onToggle={(v) => setFilter({ engine_volume: v ? Number(v) : undefined })}
+          />
+          <FilterChips
+            label="Мощность (л.с.)"
+            options={powerOpts}
+            value={specs.horse_power !== undefined ? String(specs.horse_power) : undefined}
+            onToggle={(v) => setFilter({ horse_power: v ? Number(v) : undefined })}
+          />
+          <FilterChips label="Коробка передач" options={transOpts} value={specs.transmission_type} onToggle={(v) => setFilter({ transmission_type: v })} />
+          <FilterChips label="Тип привода" options={driveOpts} value={specs.drive_type} onToggle={(v) => setFilter({ drive_type: v })} />
+          <FilterChips label="Тип руля" options={steerOpts} value={specs.steering_wheel_position} onToggle={(v) => setFilter({ steering_wheel_position: v })} />
+
+          <View className="gap-3 border-t border-borderLight pt-5">
+            <SectionLabel>Подходящие авто ({total.toLocaleString('ru-RU')})</SectionLabel>
+
+            {isLoading ? (
+              <View className="items-center justify-center py-10"><Spinner /></View>
+            ) : isError ? (
+              <ErrorPlate text="Не удалось загрузить характеристики." />
+            ) : mods.length === 0 ? (
+              <ErrorPlate text="Под выбранные параметры авто не найдены. Уберите часть фильтров." muted />
+            ) : (
+              <View className="flex-row flex-wrap gap-2">
+                {mods.map((mod) => (
+                  <ModCard key={mod.source_id} mod={mod} active={mod.source_id === selectedId} onPress={() => onSelect(mod)} />
+                ))}
+              </View>
+            )}
+          </View>
+        </StepCard>
+      </ScrollView>
+
+      <BottomBar>
+        <Button fullWidth disabled={!selectedId} onPress={onConfirm}>
+          Выбрать авто
+        </Button>
+      </BottomBar>
+    </View>
   )
 }
 
-// --- Шаг 4: Финальная форма ---
+function ModCard({ mod, active, onPress }: { mod: Modification; active: boolean; onPress: () => void }) {
+  const title = mod.full_title || mod.name || mod.display_name || mod.title || `Модификация #${mod.id}`
+  const yearRange = mod.year_from || mod.year_to ? `${mod.year_from ?? ''}${mod.year_to ? `–${mod.year_to}` : ''}` : null
+  const sub = [mod.configuration_name, yearRange, mod.drive_type_label].filter(Boolean).join(' · ')
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className={cn('w-[48%] overflow-hidden rounded-sct border bg-white', active ? 'border-brandBlue' : 'border-borderLight')}
+    >
+      <View className="aspect-[16/10] bg-surfaceLight">
+        <SafeImage
+          uri={mod.photo_url ?? undefined}
+          resizeMode="cover"
+          className="h-full w-full"
+          fallback={
+            <View className="h-full w-full items-center justify-center">
+              <Text style={{ fontFamily: 'Inter_900Black' }} className="text-2xl uppercase text-borderLight">
+                {title.slice(0, 2)}
+              </Text>
+            </View>
+          }
+        />
+      </View>
+      <View className="p-3">
+        {mod.group_name ? (
+          <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-[10px] uppercase tracking-widest text-brandBlue">
+            {mod.group_name}
+          </Text>
+        ) : null}
+        <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-sm uppercase text-textPrimary">{title}</Text>
+        {sub ? <Text numberOfLines={1} className="mt-0.5 text-[10px] uppercase tracking-widest text-textSecondary">{sub}</Text> : null}
+      </View>
+    </Pressable>
+  )
+}
+
+// --- Шаг 5: Номер ---
 const licensePlateRegex = /^[A-ZА-ЯЁ0-9\-\s]{2,32}$/i
 const vinRegex = /^[A-HJ-NPR-Z0-9]{0,17}$/
 
@@ -518,95 +642,179 @@ const finalSchema = z.object({
 })
 type FinalValues = z.infer<typeof finalSchema>
 
-function FinalForm({ onSubmit, serverError }: { onSubmit: (v: FinalValues) => Promise<void>; serverError: string | null }) {
+function FinalForm({
+  defaultVin,
+  onSubmit,
+  serverError,
+}: {
+  defaultVin?: string
+  onSubmit: (v: FinalValues) => Promise<void>
+  serverError: string | null
+}) {
   const {
     control,
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<FinalValues>({
     resolver: zodResolver(finalSchema),
-    defaultValues: { license_plate: '', nickname: '', vin_code: '' },
+    defaultValues: { license_plate: '', nickname: '', vin_code: defaultVin ?? '' },
   })
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 16 }} keyboardShouldPersistTaps="handled">
-      <Text style={{ fontFamily: 'Inter_900Black' }} className="text-center text-2xl uppercase text-textPrimary">
-        Почти готово
-      </Text>
-      <Text className="text-center text-sm text-textSecondary">Введите данные для регистрации в системе</Text>
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }} keyboardShouldPersistTaps="handled">
+      <StepCard>
+        <Text style={{ fontFamily: 'Inter_900Black' }} className="text-center text-2xl uppercase text-textPrimary">
+          Почти готово
+        </Text>
+        <Text className="text-center text-sm text-textSecondary">Введите данные для регистрации в системе</Text>
 
-      <Controller
-        control={control}
-        name="license_plate"
-        render={({ field }) => (
-          <Input
-            label="Госномер (обязательно)"
-            placeholder="000 AAA 01"
-            autoCapitalize="characters"
-            value={field.value}
-            onChangeText={field.onChange}
-            onBlur={field.onBlur}
-            error={errors.license_plate?.message}
-          />
-        )}
-      />
-      <Controller
-        control={control}
-        name="nickname"
-        render={({ field }) => (
-          <Input
-            label="Псевдоним (необязательно)"
-            placeholder="Напр: Моя машина"
-            value={field.value}
-            onChangeText={field.onChange}
-            onBlur={field.onBlur}
-            error={errors.nickname?.message}
-          />
-        )}
-      />
-      <Controller
-        control={control}
-        name="vin_code"
-        render={({ field }) => (
-          <Input
-            label="VIN (необязательно)"
-            placeholder="VIN код"
-            autoCapitalize="characters"
-            maxLength={17}
-            value={field.value}
-            onChangeText={field.onChange}
-            onBlur={field.onBlur}
-            error={errors.vin_code?.message}
-          />
-        )}
-      />
+        <Controller
+          control={control}
+          name="license_plate"
+          render={({ field }) => (
+            <Input
+              label="Госномер (обязательно)"
+              placeholder="000 AAA 01"
+              autoCapitalize="characters"
+              value={field.value}
+              onChangeText={field.onChange}
+              onBlur={field.onBlur}
+              error={errors.license_plate?.message}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="nickname"
+          render={({ field }) => (
+            <Input
+              label="Псевдоним авто (необязательно)"
+              placeholder="Напр: Моя машина"
+              value={field.value}
+              onChangeText={field.onChange}
+              onBlur={field.onBlur}
+              error={errors.nickname?.message}
+            />
+          )}
+        />
+        <Controller
+          control={control}
+          name="vin_code"
+          render={({ field }) => (
+            <Input
+              label="Введите VIN код (необязательно)"
+              placeholder="VIN код"
+              autoCapitalize="characters"
+              maxLength={17}
+              value={field.value}
+              onChangeText={(t) => field.onChange(t.toUpperCase())}
+              onBlur={field.onBlur}
+              error={errors.vin_code?.message}
+            />
+          )}
+        />
 
-      {serverError ? (
-        <View className="rounded-sct border border-red-200 bg-red-50 p-3">
-          <Text className="text-red-700">{serverError}</Text>
-        </View>
-      ) : null}
+        {serverError ? (
+          <View className="rounded-sct border border-red-200 bg-red-50 p-3">
+            <Text className="text-red-700">{serverError}</Text>
+          </View>
+        ) : null}
 
-      <Button fullWidth size="lg" loading={isSubmitting} onPress={handleSubmit(onSubmit)}>
-        Добавить в гараж
-      </Button>
+        <Button fullWidth size="lg" loading={isSubmitting} onPress={handleSubmit(onSubmit)}>
+          Добавить в гараж
+        </Button>
+      </StepCard>
     </ScrollView>
   )
 }
 
 // --- helpers ---
+function StepCard({ children }: { children: ReactNode }) {
+  return <View className="gap-4 rounded-sct-lg border border-borderLight bg-white p-4">{children}</View>
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+      {children}
+    </Text>
+  )
+}
+
+function SelectTile({
+  active,
+  onPress,
+  className,
+  children,
+}: {
+  active: boolean
+  onPress: () => void
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={cn(
+        'rounded-sct border px-4 py-2.5',
+        active ? 'border-brandBlue bg-blue-50' : 'border-borderLight bg-white',
+        className,
+      )}
+    >
+      {children}
+    </Pressable>
+  )
+}
+
+function FilterChips({
+  label,
+  options,
+  value,
+  onToggle,
+}: {
+  label: string
+  options: { value: string; label: string }[]
+  value: string | undefined
+  onToggle: (value: string | undefined) => void
+}) {
+  if (options.length === 0) return null
+  return (
+    <View className="gap-3">
+      <SectionLabel>{label}</SectionLabel>
+      <View className="flex-row flex-wrap gap-2">
+        {options.map((o) => {
+          const active = value === o.value
+          return (
+            <SelectTile key={o.value} active={active} onPress={() => onToggle(active ? undefined : o.value)}>
+              <Text
+                style={{ fontFamily: 'Inter_700Bold' }}
+                className={cn('text-[13px]', active ? 'text-brandBlue' : 'text-textPrimary')}
+              >
+                {o.label}
+              </Text>
+            </SelectTile>
+          )
+        })}
+      </View>
+    </View>
+  )
+}
+
+function mapCodeName(items: CodeNameOption[] | undefined): { value: string; label: string }[] {
+  if (!items) return []
+  return items.map((it) => ({ value: it.value, label: it.label ?? it.name ?? it.code ?? it.value }))
+}
+
 function Centered({ children }: { children: ReactNode }) {
   return <View className="flex-1 items-center justify-center bg-surfaceLight">{children}</View>
 }
 
 function ErrorPlate({ text, muted }: { text: string; muted?: boolean }) {
   return (
-    <View className="m-4">
-      <View className={cn('rounded-sct border p-4', muted ? 'border-borderLight bg-surfaceLight' : 'border-red-200 bg-red-50')}>
-        <Text style={{ fontFamily: 'Inter_700Bold' }} className={cn('text-center text-sm', muted ? 'text-textSecondary' : 'text-red-700')}>
-          {text}
-        </Text>
-      </View>
+    <View className={cn('rounded-sct border p-4', muted ? 'border-borderLight bg-surfaceLight' : 'border-red-200 bg-red-50')}>
+      <Text style={{ fontFamily: 'Inter_700Bold' }} className={cn('text-center text-sm', muted ? 'text-textSecondary' : 'text-red-700')}>
+        {text}
+      </Text>
     </View>
   )
 }

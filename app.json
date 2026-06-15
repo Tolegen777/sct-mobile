@@ -2,6 +2,7 @@
   "expo": {
     "name": "SCT Service",
     "slug": "sct-mobile",
+    "owner": "tolegen777",
     "version": "1.0.0",
     "scheme": "sctservice",
     "orientation": "portrait",
@@ -20,7 +21,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0A1B3D"
-      }
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -48,6 +53,12 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "5a03fdf7-fe9d-42ae-ae93-883697a72b38"
+      }
     }
   }
 }

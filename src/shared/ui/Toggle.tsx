@@ -14,7 +14,7 @@ interface ToggleProps {
 
 export function Toggle({ checked, onChange, label, description, disabled }: ToggleProps) {
   return (
-    <View className="flex-1 flex-row items-center justify-between gap-4">
+    <View className="w-full flex-row items-center justify-between gap-4">
       <View className="flex-1">
         {label ? (
           <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-sm text-textPrimary">

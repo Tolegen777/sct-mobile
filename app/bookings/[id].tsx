@@ -12,6 +12,7 @@ import { RequireAuth } from '@/shared/ui/RequireAuth'
 import { Spinner } from '@/shared/ui/Spinner'
 import { Card } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
+import { BottomBar } from '@/shared/ui/BottomBar'
 import { parseApiError } from '@/features/auth/errors'
 import { formatDateTime, formatMileage } from '@/shared/lib/format'
 import { cn } from '@/shared/lib/cn'
@@ -135,7 +136,7 @@ function BookingInner({ id }: { id?: number }) {
       </ScrollView>
 
       {canEdit || canCancel ? (
-        <View className="gap-2 border-t border-borderLight bg-white px-4 py-3">
+        <BottomBar className="gap-2">
           {canEdit ? (
             <Button variant="primary" fullWidth onPress={() => setEditOpen(true)}>
               Изменить запись
@@ -146,7 +147,7 @@ function BookingInner({ id }: { id?: number }) {
               Отменить запись
             </Button>
           ) : null}
-        </View>
+        </BottomBar>
       ) : null}
 
       {canEdit ? (

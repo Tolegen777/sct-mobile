@@ -15,6 +15,7 @@ import { GuestPrompt } from '@/features/auth/GuestPrompt'
 import { Spinner } from '@/shared/ui/Spinner'
 import { Card } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
+import { BottomBar } from '@/shared/ui/BottomBar'
 import { formatMoney } from '@/shared/lib/format'
 import { getPackageShortTitle } from '@/features/packages/lib'
 
@@ -187,7 +188,7 @@ export default function PackageDetailScreen() {
       </ScrollView>
 
       {/* Нижний бар с ценой и CTA */}
-      <View className="flex-row items-center gap-3 border-t border-borderLight bg-white px-4 py-3">
+      <BottomBar className="flex-row items-center gap-3">
         <View className="flex-1">
           <Text className="text-[10px] uppercase tracking-widest text-textSecondary">К оплате</Text>
           <View className="flex-row items-baseline gap-2">
@@ -202,7 +203,7 @@ export default function PackageDetailScreen() {
         <Button size="md" onPress={goBook}>
           Оформить запись
         </Button>
-      </View>
+      </BottomBar>
     </View>
   )
 }

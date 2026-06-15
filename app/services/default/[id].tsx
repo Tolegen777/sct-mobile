@@ -17,6 +17,7 @@ import { RequireAuth } from '@/shared/ui/RequireAuth'
 import { Spinner } from '@/shared/ui/Spinner'
 import { Card } from '@/shared/ui/Card'
 import { Button } from '@/shared/ui/Button'
+import { BottomBar } from '@/shared/ui/BottomBar'
 
 /** Нейтральные шаги процесса — в API их нет, одинаковы для любой услуги. */
 const PROCESS_STEPS = [
@@ -188,13 +189,13 @@ function DefaultServiceInner({ id }: { id?: number }) {
       </ScrollView>
 
       {/* Sticky: цена + Записаться */}
-      <View className="flex-row items-center gap-3 border-t border-borderLight bg-white px-4 py-3">
+      <BottomBar className="flex-row items-center gap-3">
         <View className="flex-1">
           <Text className="text-[10px] uppercase tracking-widest text-textSecondary">Стоимость</Text>
           <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-sm text-brandBlue">{priceText}</Text>
         </View>
         <Button size="md" onPress={goBook}>Записаться</Button>
-      </View>
+      </BottomBar>
     </View>
   )
 }

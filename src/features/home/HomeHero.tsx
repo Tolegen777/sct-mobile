@@ -2,11 +2,29 @@
  * Тёмный hero главной — RN-порт features/home/HomeHero.tsx.
  * Гость: маркетинг + Регистрация/Вход. Авторизованный: приветствие по имени +
  * CTA (записаться/добавить авто/услуги в зависимости от hasCars).
- * Декоративные фото-заглушки веба опущены.
+ *
+ * Фон-фото (как в макете screens/main): когда придут брендовые фото — положи
+ * файлы в `assets/` и подставь `require` в HERO_GUEST / HERO_ADVISOR ниже.
+ * Пока source пуст — рисуем декоративную заглушку (navy + водяной знак SCT).
+ * Если фото будет доступно по URL, а не файлом — можно отдать строку в
+ * `source={{ uri }}` вместо require.
  */
-import { Pressable, Text, View } from 'react-native'
+import type { ReactNode } from 'react'
+import {
+  Image,
+  ImageBackground,
+  Pressable,
+  Text,
+  View,
+  type ImageSourcePropType,
+} from 'react-native'
 import { useRouter } from 'expo-router'
 import { useAuthStore } from '@/features/auth/store'
+
+// Брендовые фото hero (лежат в assets/). Гость — авто на сервисе,
+// авторизованный — мастер SCT. Заменить файлы → обновятся автоматически.
+const HERO_GUEST: ImageSourcePropType = require('../../../assets/hero-guest.jpg')
+const HERO_ADVISOR: ImageSourcePropType = require('../../../assets/hero-advisor.jpg')
 
 export function HomeHero({ hasCars }: { hasCars: boolean }) {
   const router = useRouter()
@@ -16,7 +34,7 @@ export function HomeHero({ hasCars }: { hasCars: boolean }) {
 
   if (!isAuthed) {
     return (
-      <View className="overflow-hidden rounded-sct-lg bg-navy p-6">
+      <HeroShell variant="guest" source={HERO_GUEST}>
         <View className="self-start rounded-full bg-white/10 px-4 py-1.5">
           <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[10px] uppercase tracking-widest text-white/80">
             Официальный автосервис
@@ -32,7 +50,7 @@ export function HomeHero({ hasCars }: { hasCars: boolean }) {
           <HeroButton label="Зарегистрироваться" tone="yellow" onPress={() => router.push('/register')} />
           <HeroButton label="Войти по номеру" tone="translucent" onPress={() => router.push('/login')} />
         </View>
-      </View>
+      </HeroShell>
     )
   }
 
@@ -42,7 +60,7 @@ export function HomeHero({ hasCars }: { hasCars: boolean }) {
     : 'ВАШ АВТОМОБИЛЬ ГОТОВ К СЕРВИСУ'
 
   return (
-    <View className="overflow-hidden rounded-sct-lg bg-navy p-6">
+    <HeroShell variant="authed" source={HERO_ADVISOR}>
       <Text style={{ fontFamily: 'Inter_900Black' }} className="text-2xl uppercase leading-tight text-white">
         {title}
       </Text>
@@ -62,7 +80,63 @@ export function HomeHero({ hasCars }: { hasCars: boolean }) {
           </>
         )}
       </View>
-    </View>
+    </HeroShell>
+  )
+}
+
+/**
+ * Обёртка hero с фоновым фото.
+ *   guest  — фото авто (субъект справа кадра) ровно по центру (ImageBackground);
+ *   authed — мастер по центру кадра → якорим фото к левому краю, чтобы он ушёл
+ *            вправо, а слева (под текстом) затемняем сильнее.
+ * Без source — navy с водяным знаком SCT (заглушка).
+ */
+function HeroShell({
+  variant,
+  source,
+  children,
+}: {
+  variant: 'guest' | 'authed'
+  source?: ImageSourcePropType
+  children: ReactNode
+}) {
+  if (!source) {
+    return (
+      <View className="overflow-hidden rounded-sct-lg bg-navy p-6">
+        <Text
+          style={{ fontFamily: 'Inter_900Black' }}
+          className="absolute right-3 top-1 text-6xl text-white/5"
+          pointerEvents="none"
+        >
+          SCT
+        </Text>
+        {children}
+      </View>
+    )
+  }
+
+  if (variant === 'authed') {
+    return (
+      <View className="overflow-hidden rounded-sct-lg bg-navy">
+        {/* Фото якорим влево: мастер из центра кадра уходит вправо */}
+        <Image
+          source={source}
+          resizeMode="cover"
+          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, aspectRatio: 1672 / 941 }}
+        />
+        {/* Базовое затемнение + усиление слева под текст, мастер справа светлее */}
+        <View className="absolute inset-0 bg-navy/35" />
+        <View className="absolute inset-y-0 left-0 w-3/5 bg-navy/45" />
+        <View className="p-6">{children}</View>
+      </View>
+    )
+  }
+
+  return (
+    <ImageBackground source={source} resizeMode="cover" className="overflow-hidden rounded-sct-lg bg-navy">
+      <View className="absolute inset-0 bg-navy/70" />
+      <View className="p-6">{children}</View>
+    </ImageBackground>
   )
 }
 
