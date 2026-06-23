@@ -11,7 +11,7 @@
  *     мощность/КПП/привод/руль) + сетка подходящих авто + «Выбрать авто».
  *   - VIN вводится опционально заранее (модалка) и подставляется в финал.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { Stack, useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -35,6 +35,7 @@ import {
   useMarksQuery,
   useModelsQuery,
   useModificationsQuery,
+  useTrimsQuery,
 } from '@/features/garage/add-car/queries'
 import type {
   CarsQuery,
@@ -42,6 +43,7 @@ import type {
   Mark,
   Model,
   Modification,
+  Trim,
 } from '@/features/garage/add-car/types'
 
 /** Параметры сужения (год/кузов/поколение + характеристики) — как web SpecsValues. */
@@ -57,7 +59,7 @@ interface SpecsValues {
   steering_wheel_position?: string
 }
 
-const STEPS = ['Марка', 'Модель', 'Поколение', 'Характеристики', 'Номер']
+const STEPS = ['Марка', 'Модель', 'Поколение', 'Характеристики', 'Комплектация', 'Номер']
 
 export default function AddCarScreen() {
   return (
@@ -75,6 +77,7 @@ function AddCarWizard() {
   const [model, setModel] = useState<Model | null>(null)
   const [specs, setSpecs] = useState<SpecsValues>({})
   const [modification, setModification] = useState<Modification | null>(null)
+  const [trim, setTrim] = useState<Trim | null>(null)
   const [serverError, setServerError] = useState<string | null>(null)
 
   // VIN — опционально заранее, подставляется в финальную форму.
@@ -82,7 +85,15 @@ function AddCarWizard() {
   const [vinDraft, setVinDraft] = useState('')
   const [vinOpen, setVinOpen] = useState(false)
 
+  // Одна комплектация → шаг «Комплектация» проскакивается (TrimPicker сам её
+  // выбирает), поэтому «назад» с «Номера» ведёт сразу на «Характеристики».
+  const singleTrim = modification?.trims_count === 1
+
   const onBack = () => {
+    if (step === 5 && singleTrim) {
+      setStep(3)
+      return
+    }
     if (step > 0) setStep((s) => Math.max(0, s - 1))
     else router.back()
   }
@@ -92,6 +103,7 @@ function AddCarWizard() {
       setModel(null)
       setSpecs({})
       setModification(null)
+      setTrim(null)
     }
     setMark(m)
     setStep(1)
@@ -100,6 +112,7 @@ function AddCarWizard() {
     if (model?.id !== m.id) {
       setSpecs({})
       setModification(null)
+      setTrim(null)
     }
     setModel(m)
     setStep(2)
@@ -107,17 +120,26 @@ function AddCarWizard() {
   const onChangeSpecs = (next: SpecsValues) => {
     setSpecs(next)
     setModification(null)
+    setTrim(null)
+  }
+  const onPickMod = (m: Modification) => {
+    if (modification?.id !== m.id) setTrim(null)
+    setModification(m)
   }
   const confirmMod = () => {
     if (modification) setStep(4)
   }
+  const onPickTrim = (t: Trim) => {
+    setTrim(t)
+    setStep(5)
+  }
 
   const submit = async (v: FinalValues) => {
-    if (!modification) return
+    if (!trim) return
     setServerError(null)
     try {
       await createCar.mutateAsync({
-        modification_source_id: modification.source_id,
+        modification_trim_source_id: trim.source_id,
         license_plate: v.license_plate.trim().toUpperCase(),
         nickname: v.nickname?.trim() ?? '',
         vin_code: v.vin_code?.trim().toUpperCase() ?? '',
@@ -166,12 +188,19 @@ function AddCarWizard() {
           modelId={model.id}
           specs={specs}
           onChangeSpecs={onChangeSpecs}
-          selectedId={modification?.source_id ?? null}
-          onSelect={setModification}
+          selectedId={modification?.id ?? null}
+          onSelect={onPickMod}
           onConfirm={confirmMod}
         />
       ) : null}
       {step === 4 && modification ? (
+        <TrimPicker
+          modificationId={modification.id}
+          selectedTrimSourceId={trim?.source_id ?? null}
+          onSelect={onPickTrim}
+        />
+      ) : null}
+      {step === 5 && trim ? (
         <FinalForm defaultVin={vin} onSubmit={submit} serverError={serverError} />
       ) : null}
 
@@ -513,7 +542,7 @@ function ModificationPicker({
   modelId: number
   specs: SpecsValues
   onChangeSpecs: (next: SpecsValues) => void
-  selectedId: string | null
+  selectedId: number | null
   onSelect: (m: Modification) => void
   onConfirm: () => void
 }) {
@@ -568,7 +597,7 @@ function ModificationPicker({
             ) : (
               <View className="flex-row flex-wrap gap-2">
                 {mods.map((mod) => (
-                  <ModCard key={mod.source_id} mod={mod} active={mod.source_id === selectedId} onPress={() => onSelect(mod)} />
+                  <ModCard key={mod.id} mod={mod} active={mod.id === selectedId} onPress={() => onSelect(mod)} />
                 ))}
               </View>
             )}
@@ -577,8 +606,8 @@ function ModificationPicker({
       </ScrollView>
 
       <BottomBar>
-        <Button fullWidth disabled={!selectedId} onPress={onConfirm}>
-          Выбрать авто
+        <Button fullWidth disabled={selectedId == null} onPress={onConfirm}>
+          Далее
         </Button>
       </BottomBar>
     </View>
@@ -588,7 +617,7 @@ function ModificationPicker({
 function ModCard({ mod, active, onPress }: { mod: Modification; active: boolean; onPress: () => void }) {
   const title = mod.full_title || mod.name || mod.display_name || mod.title || `Модификация #${mod.id}`
   const yearRange = mod.year_from || mod.year_to ? `${mod.year_from ?? ''}${mod.year_to ? `–${mod.year_to}` : ''}` : null
-  const sub = [mod.configuration_name, yearRange, mod.drive_type_label].filter(Boolean).join(' · ')
+  const sub = [yearRange, mod.drive_type_label].filter(Boolean).join(' · ')
 
   return (
     <Pressable
@@ -610,9 +639,9 @@ function ModCard({ mod, active, onPress }: { mod: Modification; active: boolean;
         />
       </View>
       <View className="p-3">
-        {mod.group_name ? (
+        {mod.configuration_name ? (
           <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-[10px] uppercase tracking-widest text-brandBlue">
-            {mod.group_name}
+            {mod.configuration_name}
           </Text>
         ) : null}
         <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="text-sm uppercase text-textPrimary">{title}</Text>
@@ -622,7 +651,61 @@ function ModCard({ mod, active, onPress }: { mod: Modification; active: boolean;
   )
 }
 
-// --- Шаг 5: Номер ---
+// --- Шаг 5: Комплектация ---
+function TrimPicker({
+  modificationId,
+  selectedTrimSourceId,
+  onSelect,
+}: {
+  modificationId: number
+  selectedTrimSourceId: string | null
+  onSelect: (t: Trim) => void
+}) {
+  const { data: trims, isLoading, isError } = useTrimsQuery(modificationId)
+
+  // Одна комплектация → выбираем автоматически и пропускаем шаг.
+  useEffect(() => {
+    if (trims && trims.length === 1 && !selectedTrimSourceId) {
+      onSelect(trims[0])
+    }
+  }, [trims, selectedTrimSourceId, onSelect])
+
+  if (isLoading) return <Centered><Spinner /></Centered>
+  if (isError) return <ErrorPlate text="Не удалось загрузить комплектации." />
+
+  const items = trims ?? []
+  if (items.length === 0) return <ErrorPlate text="Для этой модификации нет комплектаций." muted />
+  // Одна — выберет эффект; показываем спиннер, чтобы не мигал список из одной.
+  if (items.length === 1) return <Centered><Spinner /></Centered>
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 32 }}>
+      <StepCard>
+        <SectionLabel>Комплектация</SectionLabel>
+        {items.map((t) => {
+          const active = t.source_id === selectedTrimSourceId
+          return (
+            <Pressable
+              key={t.id}
+              onPress={() => onSelect(t)}
+              className={cn(
+                'flex-row items-center justify-between gap-3 rounded-sct border bg-white p-4',
+                active ? 'border-brandBlue bg-blue-50' : 'border-borderLight',
+              )}
+            >
+              <Text style={{ fontFamily: 'Inter_900Black' }} numberOfLines={1} className="flex-1 text-sm uppercase text-textPrimary">
+                {t.display_name || t.name || 'Комплектация'}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={active ? '#1F5FAF' : '#D9DEE5'} />
+            </Pressable>
+          )
+        })}
+      </StepCard>
+    </ScrollView>
+  )
+}
+
+// --- Шаг 6: Номер ---
 const licensePlateRegex = /^[A-ZА-ЯЁ0-9\-\s]{2,32}$/i
 const vinRegex = /^[A-HJ-NPR-Z0-9]{0,17}$/
 
