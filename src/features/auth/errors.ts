@@ -114,20 +114,46 @@ export function parseApiError(err: unknown, fallback: string): ParsedApiError {
     general = joinList(data) ?? fallback
   } else if (data && typeof data === 'object') {
     const obj = data as Record<string, unknown>
+    const envelope = obj.error
 
-    if (typeof obj.detail === 'string') {
-      general = translateApiMessage(obj.detail)
-    }
+    if (envelope && typeof envelope === 'object' && !Array.isArray(envelope)) {
+      // Новый единый обработчик ошибок бэка:
+      //   { success:false, error:{ code, message, field, details } }
+      // message обычно уже на русском; details — DRF-карта {поле:[сообщения]}.
+      const e = envelope as Record<string, unknown>
+      if (typeof e.message === 'string') general = translateApiMessage(e.message)
 
-    if (Array.isArray(obj.non_field_errors)) {
-      const msg = joinList(obj.non_field_errors)
-      if (msg) general = general ? `${general} ${msg}` : msg
-    }
+      const details = e.details
+      if (Array.isArray(details)) {
+        const msg = joinList(details)
+        if (msg) general = general ? `${general} ${msg}` : msg
+      } else if (details && typeof details === 'object') {
+        for (const [key, value] of Object.entries(details as Record<string, unknown>)) {
+          const msg = joinList(value)
+          if (!msg) continue
+          if (key === 'non_field_errors' || key === 'detail') {
+            general = general ? `${general} ${msg}` : msg
+          } else {
+            fields[key] = msg
+          }
+        }
+      }
+    } else {
+      // Старый DRF-формат (немигрированные ручки / прочие API).
+      if (typeof obj.detail === 'string') {
+        general = translateApiMessage(obj.detail)
+      }
 
-    for (const [key, value] of Object.entries(obj)) {
-      if (key === 'detail' || key === 'non_field_errors') continue
-      const msg = joinList(value)
-      if (msg) fields[key] = msg
+      if (Array.isArray(obj.non_field_errors)) {
+        const msg = joinList(obj.non_field_errors)
+        if (msg) general = general ? `${general} ${msg}` : msg
+      }
+
+      for (const [key, value] of Object.entries(obj)) {
+        if (key === 'detail' || key === 'non_field_errors') continue
+        const msg = joinList(value)
+        if (msg) fields[key] = msg
+      }
     }
   }
 
