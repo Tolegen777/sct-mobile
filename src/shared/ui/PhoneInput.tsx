@@ -24,8 +24,18 @@ export const PhoneInput = forwardRef<TextInput, PhoneInputProps>(function PhoneI
   ref,
 ) {
   const handleChange = useCallback(
-    (text: string) => onChange(formatPhoneInput(text)),
-    [onChange],
+    (text: string) => {
+      // Backspace по форматирующему символу (пробел/скобка/дефис): текст стал
+      // короче, но повторное маскирование возвращает прежнее значение —
+      // удаление «зависает». В этом случае убираем последнюю цифру.
+      if (text.length < value.length && formatPhoneInput(text) === value) {
+        const digits = value.replace(/\D/g, '')
+        onChange(formatPhoneInput(digits.slice(0, -1)))
+        return
+      }
+      onChange(formatPhoneInput(text))
+    },
+    [onChange, value],
   )
 
   return (
