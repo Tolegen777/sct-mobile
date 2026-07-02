@@ -1,24 +1,27 @@
 /**
  * «Предстоящие визиты» на дашборде — RN-порт features/home/
  * UpcomingVisitsSection.tsx. До 3 активных записей; пусто → не рендерим.
+ *
+ * Список берём из `/service-book/bookings/` (не из `page-data`, где
+ * `appointments` сейчас всегда приходит пустым) и делим через
+ * `splitBookings`, чтобы просроченные, но не закрытые сотрудником записи
+ * не зависали в «ближайших» навсегда.
  */
 import { Pressable, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
-import { useServiceBookQuery } from '@/features/service-book/queries'
+import { useBookingsQuery } from '@/features/bookings/queries'
+import { splitBookings } from '@/features/bookings/lib'
+import type { Booking } from '@/features/bookings/types'
 import { Card } from '@/shared/ui/Card'
 import { formatDateTime } from '@/shared/lib/format'
-import type { Appointment } from '@/features/service-book/types'
 
 export function UpcomingVisitsSection() {
   const router = useRouter()
-  const { data } = useServiceBookQuery({ status: 'active', period: 'upcoming', limit: 5, offset: 0 })
+  const { data } = useBookingsQuery({ status: 'all', period: 'all', limit: 20, offset: 0 })
   if (!data) return null
 
-  const upcoming = data.appointments.filter((a) => a.is_active && !a.is_cancelled)
-  const all = data.next_appointment
-    ? [data.next_appointment, ...upcoming.filter((a) => a.id !== data.next_appointment?.id)]
-    : upcoming
-  const items = all.slice(0, 3)
+  const { next, upcoming } = splitBookings(data)
+  const items = (next ? [next, ...upcoming] : upcoming).slice(0, 3)
   if (items.length === 0) return null
 
   return (
@@ -37,24 +40,28 @@ export function UpcomingVisitsSection() {
         </Pressable>
       </View>
 
-      {items.map((a, idx) => (
-        <VisitRow key={a.id} appointment={a} highlighted={idx === 0} onPress={() => router.push(`/bookings/${a.id}`)} />
+      {items.map((booking, idx) => (
+        <VisitRow key={booking.id} booking={booking} highlighted={idx === 0} onPress={() => router.push(`/bookings/${booking.id}`)} />
       ))}
     </View>
   )
 }
 
 function VisitRow({
-  appointment,
+  booking,
   highlighted,
   onPress,
 }: {
-  appointment: Appointment
+  booking: Booking
   highlighted: boolean
   onPress: () => void
 }) {
-  const dt = appointment.final_datetime ?? appointment.scheduled_datetime ?? appointment.preferred_datetime
-  const title = appointment.service?.title ?? appointment.service_package?.title ?? 'Услуга'
+  const dt = booking.final_datetime ?? booking.scheduled_datetime ?? booking.preferred_datetime
+  const title =
+    booking.service_data?.title ||
+    booking.service_package_data?.title ||
+    booking.default_service_page_data?.title ||
+    'Услуга'
 
   return (
     <Pressable onPress={onPress}>
@@ -71,7 +78,7 @@ function VisitRow({
         </Text>
         <Text style={{ fontFamily: 'Inter_700Bold' }} className="mt-1 text-[11px] uppercase tracking-wide text-textSecondary">
           {dt ? formatDateTime(dt) : '—'}
-          {appointment.car?.title ? ` · ${appointment.car.title}` : ''}
+          {booking.car?.title ? ` · ${booking.car.title}` : ''}
         </Text>
       </Card>
     </Pressable>

@@ -6,6 +6,8 @@
 import { ScrollView, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useServiceBookQuery } from '@/features/service-book/queries'
+import { useBookingsQuery } from '@/features/bookings/queries'
+import { splitBookings } from '@/features/bookings/lib'
 import { CarHeroCompact } from '@/features/service-book/CarHeroCompact'
 import { RecommendationStrip } from '@/features/service-book/RecommendationStrip'
 import { BookServiceCTA } from '@/features/service-book/BookServiceCTA'
@@ -27,12 +29,14 @@ export default function ServiceBookScreen() {
 
 function ServiceBookInner() {
   const router = useRouter()
-  const { data, isLoading, isError, refetch } = useServiceBookQuery({
-    status: 'all',
-    period: 'all',
-    limit: 20,
-    offset: 0,
-  })
+  // `page-data` больше не отдаёт рабочий `appointments` (всегда пустой) и не
+  // поддерживает status/period — список визитов берём из /bookings/.
+  const { data, isLoading, isError, refetch } = useServiceBookQuery({})
+  const carId = data?.selected_car?.id
+  const bookingsQuery = useBookingsQuery(
+    { car_id: carId, status: 'all', period: 'all', limit: 20, offset: 0 },
+    Boolean(carId),
+  )
 
   if (isLoading) {
     return (
@@ -84,10 +88,7 @@ function ServiceBookInner() {
     )
   }
 
-  const upcoming = data.appointments.filter(
-    (a) => a.is_active && !a.is_cancelled && a.id !== data.next_appointment?.id,
-  )
-  const history = data.appointments.filter((a) => !a.is_active || a.is_cancelled)
+  const { next, upcoming, history } = splitBookings(bookingsQuery.data ?? [])
 
   return (
     <ScrollView className="flex-1 bg-surfaceLight" contentContainerStyle={{ padding: 16, gap: 16 }}>
@@ -96,10 +97,10 @@ function ServiceBookInner() {
       <BookServiceCTA />
       <MyGarageColumn />
 
-      {data.next_appointment ? (
+      {next ? (
         <View className="gap-3">
           <SectionLabel>Ближайшие визиты</SectionLabel>
-          <AppointmentRow appointment={data.next_appointment} highlighted />
+          <AppointmentRow appointment={next} highlighted />
         </View>
       ) : null}
 

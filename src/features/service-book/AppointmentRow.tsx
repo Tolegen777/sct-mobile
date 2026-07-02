@@ -9,7 +9,8 @@ import { format, parseISO } from 'date-fns'
 import { ru } from 'date-fns/locale'
 import { Card } from '@/shared/ui/Card'
 import { cn } from '@/shared/lib/cn'
-import type { Appointment } from './types'
+import type { Booking } from '@/features/bookings/types'
+import { isBookingCancelled } from '@/features/bookings/lib'
 
 function splitDateTime(iso: string | null) {
   if (!iso) return { time: '—', date: '—' }
@@ -28,20 +29,24 @@ export function AppointmentRow({
   appointment,
   highlighted,
 }: {
-  appointment: Appointment
+  appointment: Booking
   highlighted?: boolean
 }) {
   const router = useRouter()
   const datetime =
     appointment.final_datetime ?? appointment.scheduled_datetime ?? appointment.preferred_datetime
   const { time, date } = splitDateTime(datetime)
-  const svc = appointment.service
-  const isDefault = svc?.source_type === 'default_service_page'
-  const title = svc?.title || appointment.service_package?.title || 'Услуга'
+  const svc = appointment.service_data
+  const isDefault = appointment.service_source_type === 'default_service_page'
+  const title =
+    svc?.title ||
+    appointment.service_package_data?.title ||
+    appointment.default_service_page_data?.title ||
+    'Услуга'
   const typeLabel = isDefault ? 'Дефолтная услуга' : 'Точный пакет'
-  const priceLabel = svc?.display_price || appointment.service_package?.display_price || ''
-  const station = appointment.address?.trim()
-  const isHighlighted = highlighted || appointment.is_active
+  const priceLabel = appointment.service_package_data?.price?.display || svc?.price?.display || ''
+  const station = appointment.service_station_data?.address?.trim()
+  const isHighlighted = highlighted
   const go = () => router.push(`/bookings/${appointment.id}`)
 
   if (isHighlighted) {
@@ -74,7 +79,7 @@ export function AppointmentRow({
     )
   }
 
-  const isCancelled = appointment.is_cancelled
+  const isCancelled = isBookingCancelled(appointment.status)
 
   return (
     <Pressable onPress={go}>

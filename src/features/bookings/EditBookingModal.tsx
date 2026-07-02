@@ -83,10 +83,7 @@ export function EditBookingModal({ open, onClose, booking }: EditBookingModalPro
     return dt ? formatDateTime(dt) : '—'
   })()
 
-  const currentStation = (() => {
-    const s = booking.service_station_data as { name?: string } | null
-    return s?.name || '—'
-  })()
+  const currentStation = booking.service_station_data?.name || '—'
 
   const serviceTitle =
     booking.service_data?.title ||

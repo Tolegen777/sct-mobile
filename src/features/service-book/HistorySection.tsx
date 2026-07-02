@@ -9,9 +9,9 @@ import { ru } from 'date-fns/locale'
 import { Ionicons } from '@expo/vector-icons'
 import { Card } from '@/shared/ui/Card'
 import { formatDate } from '@/shared/lib/format'
-import type { Appointment } from './types'
+import type { Booking } from '@/features/bookings/types'
 
-export function HistorySection({ history }: { history: Appointment[] }) {
+export function HistorySection({ history }: { history: Booking[] }) {
   const router = useRouter()
 
   if (history.length === 0) {
@@ -50,8 +50,12 @@ export function HistorySection({ history }: { history: Appointment[] }) {
             /* keep defaults */
           }
         }
-        const station = visit.address?.trim()
-        const title = visit.service?.title || visit.service_package?.title || 'Услуга'
+        const station = visit.service_station_data?.address?.trim()
+        const title =
+          visit.service_data?.title ||
+          visit.service_package_data?.title ||
+          visit.default_service_page_data?.title ||
+          'Услуга'
 
         return (
           <Pressable

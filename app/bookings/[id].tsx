@@ -16,6 +16,7 @@ import { BottomBar } from '@/shared/ui/BottomBar'
 import { parseApiError } from '@/features/auth/errors'
 import { formatDateTime, formatMileage } from '@/shared/lib/format'
 import { cn } from '@/shared/lib/cn'
+import { isBookingCancelled } from '@/features/bookings/lib'
 
 export default function BookingDetailScreen() {
   const params = useLocalSearchParams<{ id: string }>()
@@ -28,7 +29,7 @@ export default function BookingDetailScreen() {
 }
 
 function statusTone(status: string): string {
-  if (status === 'CANCELLED') return 'bg-red-50 text-red-600'
+  if (isBookingCancelled(status)) return 'bg-red-50 text-red-600'
   if (status === 'COMPLETED') return 'bg-green-50 text-green-700'
   if (status === 'IN_PROGRESS') return 'bg-blue-50 text-brandBlue'
   return 'bg-surfaceMuted text-textSecondary'
@@ -70,8 +71,8 @@ function BookingInner({ id }: { id?: number }) {
   const carTitle = data.car?.title || data.car_title_snapshot
   const plate = data.car?.license_plate || data.license_plate_snapshot
   const price = data.price?.display
-  const canCancel = data.permissions?.can_cancel && data.status !== 'CANCELLED'
-  const canEdit = data.permissions?.can_edit && data.status !== 'CANCELLED'
+  const canCancel = data.permissions?.can_cancel && !isBookingCancelled(data.status)
+  const canEdit = data.permissions?.can_edit && !isBookingCancelled(data.status)
 
   const onCancel = () => {
     Alert.alert('Отменить запись?', 'Это действие нельзя отменить.', [
@@ -125,7 +126,7 @@ function BookingInner({ id }: { id?: number }) {
           </Card>
         ) : null}
 
-        {data.status === 'CANCELLED' && data.cancel_reason ? (
+        {isBookingCancelled(data.status) && data.cancel_reason ? (
           <Card className="border-red-200 bg-red-50 p-5">
             <Text style={{ fontFamily: 'Inter_900Black' }} className="text-[11px] uppercase tracking-widest text-red-600">
               Причина отмены
