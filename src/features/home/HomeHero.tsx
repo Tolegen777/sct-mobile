@@ -11,7 +11,6 @@
  */
 import type { ReactNode } from 'react'
 import {
-  Image,
   ImageBackground,
   Pressable,
   Text,
@@ -116,19 +115,15 @@ function HeroShell({
   }
 
   if (variant === 'authed') {
+    // ImageBackground с cover всегда заполняет карточку (раньше абсолютный
+    // Image с aspectRatio без ширины «съезжал» вправо). Слева усиливаем
+    // затемнение под текст.
     return (
-      <View className="overflow-hidden rounded-sct-lg bg-navy">
-        {/* Фото якорим влево: мастер из центра кадра уходит вправо */}
-        <Image
-          source={source}
-          resizeMode="cover"
-          style={{ position: 'absolute', top: 0, bottom: 0, left: 0, aspectRatio: 1672 / 941 }}
-        />
-        {/* Базовое затемнение + усиление слева под текст, мастер справа светлее */}
-        <View className="absolute inset-0 bg-navy/35" />
-        <View className="absolute inset-y-0 left-0 w-3/5 bg-navy/45" />
+      <ImageBackground source={source} resizeMode="cover" className="overflow-hidden rounded-sct-lg bg-navy">
+        <View className="absolute inset-0 bg-navy/45" />
+        <View className="absolute inset-y-0 left-0 w-3/5 bg-navy/40" />
         <View className="p-6">{children}</View>
-      </View>
+      </ImageBackground>
     )
   }
 

@@ -700,6 +700,18 @@ function TrimPicker({
             </Pressable>
           )
         })}
+
+        {/* Человек может не знать комплектацию — даём пропустить. Бэк требует
+            валидный modification_trim_source_id, поэтому берём первую доступную
+            (не снятую с производства) — уточнить можно позже. */}
+        <Pressable
+          onPress={() => onSelect(items.find((t) => !t.is_closed) ?? items[0])}
+          className="mt-3 items-center rounded-sct border border-dashed border-borderLight p-4 active:opacity-80"
+        >
+          <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
+            Не знаю комплектацию — пропустить
+          </Text>
+        </Pressable>
       </StepCard>
     </ScrollView>
   )
