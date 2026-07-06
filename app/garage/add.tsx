@@ -709,7 +709,7 @@ function TrimPicker({
           className="mt-3 items-center rounded-sct border border-dashed border-borderLight p-4 active:opacity-80"
         >
           <Text style={{ fontFamily: 'Inter_700Bold' }} className="text-[12px] uppercase tracking-widest text-textSecondary">
-            Не знаю комплектацию — пропустить
+            Пропустить
           </Text>
         </Pressable>
       </StepCard>

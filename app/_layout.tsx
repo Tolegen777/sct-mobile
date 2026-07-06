@@ -62,7 +62,20 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <StatusBar style="dark" />
           <AppLockGate>
-            <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#fff' } }}>
+            <Stack
+              screenOptions={{
+                headerShown: false,
+                contentStyle: { backgroundColor: '#fff' },
+                // Когда экран включает шапку (гараж, услуги, модалки) — navy,
+                // заголовок по центру белым, у кнопки «назад» убираем подпись
+                // «(tabs)» (оставляем только шеврон).
+                headerStyle: { backgroundColor: '#0A1B3D' },
+                headerTintColor: '#FFFFFF',
+                headerTitleAlign: 'center',
+                headerTitleStyle: { fontFamily: 'Inter_900Black', color: '#FFFFFF' },
+                headerBackButtonDisplayMode: 'minimal',
+              }}
+            >
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="login" options={{ presentation: 'modal', headerShown: true, title: 'Вход' }} />
               <Stack.Screen name="register" options={{ presentation: 'modal', headerShown: true, title: 'Регистрация' }} />
