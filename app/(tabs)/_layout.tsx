@@ -5,6 +5,7 @@
  */
 import { Tabs } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
+import { View } from 'react-native'
 import { useAuthStore } from '@/features/auth/store'
 import { Logo } from '@/shared/ui/Logo'
 
@@ -17,11 +18,17 @@ export default function TabsLayout() {
         tabBarActiveTintColor: '#1F5FAF',
         tabBarInactiveTintColor: '#94A3B8',
         tabBarLabelStyle: { fontFamily: 'Inter_700Bold', fontSize: 10, textTransform: 'uppercase' },
-        // Тёмная navy-шапка с реальным логотипом SCT по центру (как на вебе).
+        // Navy-шапка как в мобильной версии веба: логотип слева, название
+        // экрана по центру белым.
         headerStyle: { backgroundColor: '#0A1B3D' },
         headerTintColor: '#FFFFFF',
         headerTitleAlign: 'center',
-        headerTitle: () => <Logo width={64} />,
+        headerTitleStyle: { fontFamily: 'Inter_900Black', color: '#FFFFFF' },
+        headerLeft: () => (
+          <View style={{ paddingLeft: 16 }}>
+            <Logo width={54} />
+          </View>
+        ),
       }}
     >
       <Tabs.Screen
