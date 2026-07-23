@@ -10,8 +10,15 @@ export const endpoints = {
   // --- Клиент: авторизация ---
   clientLogin: '/api/v1/client_endpoints/auth/login/',
   clientRegister: '/api/v1/client_endpoints/auth/register/',
+  // Регистрация двухэтапная: register → SMS → register/verify.
+  clientRegisterVerify: '/api/v1/client_endpoints/auth/register/verify/',
+  clientRegisterResend: '/api/v1/client_endpoints/auth/register/resend/',
   clientRefresh: '/api/v1/client_endpoints/auth/refresh/',
   clientProfile: '/api/v1/client_endpoints/auth/profile/',
+
+  // --- Клиент: восстановление пароля по SMS ---
+  clientPasswordResetRequest: '/api/v1/client_endpoints/auth/password-reset/request/',
+  clientPasswordResetConfirm: '/api/v1/client_endpoints/auth/password-reset/confirm/',
 
   // --- Клиент: гараж ---
   garageCars: '/api/v1/client_endpoints/garage/cars/',
